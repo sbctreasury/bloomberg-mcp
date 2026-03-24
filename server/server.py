@@ -721,4 +721,4 @@ async def bloomberg_bql_examples(domain: str) -> dict[str, Any]:
 # ======================================================================
 
 if __name__ == "__main__":
-    mcp.run()
+    mcp.run(show_banner=False)
