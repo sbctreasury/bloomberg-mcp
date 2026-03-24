@@ -4,7 +4,7 @@ A self-documenting [Model Context Protocol](https://modelcontextprotocol.io/) se
 
 ## Features
 
-- **12 tools** — BDP, BDH, BDIB, BQL, bond analytics, screening, field search, charting, reference docs, examples
+- **11 tools** — BDP, BDH, BDIB, BQL, bond analytics, screening, field search, reference docs, examples
 - **17 BQL reference files** — comprehensive syntax documentation served as MCP resources
 - **27 verified test queries** — covering equity, fixed income, credit, CDS, returns, curves, and funds
 - **3-tier BQL execution** — polars-bloomberg → xbbg → bqnt-3 subprocess (automatic fallback)
@@ -92,7 +92,6 @@ Then configure with `python` directly:
 | `bloomberg_bond_info` | Fixed income analytics (yield, duration, spreads) |
 | `bloomberg_screen` | Saved or ad-hoc security screening |
 | `bloomberg_field_search` | Discover Bloomberg field mnemonics |
-| `bloomberg_chart` | Generate charts (matplotlib/altair) |
 | `bloomberg_bql_reference` | Get BQL syntax docs for a domain |
 | `bloomberg_bql_examples` | Get verified BQL examples + test queries |
 
