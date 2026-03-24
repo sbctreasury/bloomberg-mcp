@@ -343,7 +343,7 @@ async def bloomberg_bdh(
     end_date: str | None = None,
     periodicity: str | None = None,
     adjust: str | None = None,
-    ctx=None,
+    ctx: Context = None,
 ) -> dict[str, Any]:
     """Fetch Bloomberg historical time series data (BDH).
 
@@ -373,7 +373,7 @@ async def bloomberg_bdib(
     date: str,
     interval: int = 5,
     session: str = "allday",
-    ctx=None,
+    ctx: Context = None,
 ) -> dict[str, Any]:
     """Fetch Bloomberg intraday bar data (BDIB).
 
@@ -471,7 +471,7 @@ async def bloomberg_bond_info(
     securities: list[str],
     include_risk: bool = True,
     include_spreads: bool = True,
-    ctx=None,
+    ctx: Context = None,
 ) -> dict[str, Any]:
     """Fetch fixed income analytics for bonds.
 
@@ -503,7 +503,7 @@ async def bloomberg_screen(
     bql_filter: str | None = None,
     fields: list[str] | None = None,
     max_results: int = 100,
-    ctx=None,
+    ctx: Context = None,
 ) -> dict[str, Any]:
     """Screen securities using a saved Bloomberg screen or ad-hoc BQL filter.
 
