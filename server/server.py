@@ -10,10 +10,8 @@ Exposes 12 tools + MCP resources for BQL reference documentation.
 Any MCP client (Claude Code, Cursor, VS Code, custom agents) can use
 this server without a separate skill file — it's fully self-documenting.
 
-Run standalone:
-    python -m fastmcp run server.py
-
-Or via Claude Code MCP registration.
+Run:
+    python server.py
 """
 
 from __future__ import annotations
@@ -716,3 +714,11 @@ async def bloomberg_bql_examples(domain: str) -> dict[str, Any]:
             "Asset class suffix required: Equity, Index, Corp, Govt, Comdty, Curncy, Mtge",
         ],
     }
+
+
+# ======================================================================
+# Entrypoint
+# ======================================================================
+
+if __name__ == "__main__":
+    mcp.run()

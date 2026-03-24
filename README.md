@@ -24,7 +24,7 @@ A self-documenting [Model Context Protocol](https://modelcontextprotocol.io/) se
 ### Claude Code
 
 ```bash
-claude mcp add bloomberg -- python -m fastmcp run C:\Users\f8631\Documents\bloomberg-mcp\server\server.py
+claude mcp add bloomberg -- python C:/path/to/bloomberg-mcp/server/server.py
 ```
 
 Or add to your MCP config (`.claude/settings.local.json` or project `.mcp.json`):
@@ -34,13 +34,13 @@ Or add to your MCP config (`.claude/settings.local.json` or project `.mcp.json`)
   "mcpServers": {
     "bloomberg": {
       "command": "python",
-      "args": ["-m", "fastmcp", "run", "C:/path/to/bloomberg-mcp/server/server.py"]
+      "args": ["C:/path/to/bloomberg-mcp/server/server.py"]
     }
   }
 }
 ```
 
-### Cursor / VS Code
+### Cursor / VS Code / LM Studio
 
 Add to your MCP settings:
 
@@ -48,7 +48,7 @@ Add to your MCP settings:
 {
   "bloomberg": {
     "command": "python",
-    "args": ["-m", "fastmcp", "run", "/path/to/bloomberg-mcp/server/server.py"]
+    "args": ["/path/to/bloomberg-mcp/server/server.py"]
   }
 }
 ```
