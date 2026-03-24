@@ -1,6 +1,6 @@
 # Bloomberg MCP Server
 
-A self-documenting [Model Context Protocol](https://modelcontextprotocol.io/) server for Bloomberg Terminal data access. Works with any MCP client — Claude Code, Cursor, VS Code, or custom agents — without requiring a separate skill file or prompt injection.
+A self-documenting [Model Context Protocol](https://modelcontextprotocol.io/) server for Bloomberg Terminal data access. Works with any MCP client — Claude Code, Cursor, VS Code, LM Studio, or custom agents — without requiring a separate skill file or prompt injection.
 
 ## Features
 
@@ -21,7 +21,7 @@ A self-documenting [Model Context Protocol](https://modelcontextprotocol.io/) se
 ### 1. Clone the repo
 
 ```bash
-git clone https://github.com/damanijb/bloomberg-mcp.git
+git clone https://github.com/sbctreasury/bloomberg-mcp.git
 ```
 
 ### 2. Configure your MCP client
@@ -54,13 +54,13 @@ Use full paths (these apps don't inherit your shell PATH):
 ```json
 {
   "bloomberg": {
-    "command": "C:/ProgramData/miniconda3/Scripts/uv.exe",
+    "command": "C:/path/to/uv.exe",
     "args": ["run", "--project", "C:/path/to/bloomberg-mcp", "python", "C:/path/to/bloomberg-mcp/server/server.py"]
   }
 }
 ```
 
-> **Tip:** If `uv` isn't on PATH, use the full path to the `uv` executable. Find it with `where uv` or `python -m uv` as a fallback.
+> **Tip:** Find your `uv` path with `where uv` (Windows) or `which uv` (Mac/Linux). If `uv` isn't installed, use `python -m uv` as a fallback.
 
 #### Without uv (manual install)
 
@@ -75,9 +75,10 @@ Then configure with `python` directly:
 
 ```json
 {
-  "command": "C:/ProgramData/miniconda3/python.exe",
+  "command": "C:/path/to/python.exe",
   "args": ["C:/path/to/bloomberg-mcp/server/server.py"]
 }
+```
 
 ## Tools
 
@@ -132,12 +133,12 @@ These rules are embedded in tool descriptions so any MCP client learns them auto
 
 ```
 bloomberg-mcp/
+├── pyproject.toml             # uv project config (auto-installs deps)
 ├── server/
-│   ├── server.py              # FastMCP server (12 tools + resources)
+│   ├── server.py              # FastMCP server (11 tools + resources)
 │   ├── bloomberg_client.py    # Unified data access (3-tier BQL fallback)
 │   ├── bql_builder.py         # BQL validation + template builder
 │   ├── bql_subprocess.py      # bqnt-3 subprocess execution
-│   ├── chart_engine.py        # matplotlib + altair charting
 │   ├── utils.py               # Helpers (status check, serialization)
 │   └── requirements.txt
 ├── references/                # 17 BQL reference files
