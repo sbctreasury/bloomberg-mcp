@@ -13,8 +13,7 @@ A self-documenting [Model Context Protocol](https://modelcontextprotocol.io/) se
 ## Prerequisites
 
 - **Bloomberg Terminal** — must be running and logged in
-- **Python 3.12+**
-- **uv** — for automatic dependency management (`pip install uv`)
+- **Python 3.11+** — Bloomberg's bqnt-3 Python works out of the box (see below)
 
 ## Installation
 
@@ -26,9 +25,45 @@ git clone https://github.com/sbctreasury/bloomberg-mcp.git
 
 ### 2. Configure your MCP client
 
-The server uses `uv run` to automatically install all dependencies (including `blpapi` from Bloomberg's package index) on first launch. No manual `pip install` needed.
+#### Option A: Bloomberg Terminal Python (recommended — no extra installs)
 
-#### Claude Code
+Every Bloomberg Terminal machine has Python pre-installed at `C:\blp\bqnt\environments\bqnt-3\python.exe`. The `run_server.py` launcher auto-installs missing packages (fastmcp, pydantic) on first run.
+
+**Claude Code:**
+
+```bash
+claude mcp add bloomberg -- "C:/blp/bqnt/environments/bqnt-3/python.exe" "C:/path/to/bloomberg-mcp/run_server.py"
+```
+
+Or add to `.mcp.json`:
+
+```json
+{
+  "mcpServers": {
+    "bloomberg": {
+      "command": "C:/blp/bqnt/environments/bqnt-3/python.exe",
+      "args": ["C:/path/to/bloomberg-mcp/run_server.py"]
+    }
+  }
+}
+```
+
+**Cursor / VS Code / LM Studio:**
+
+```json
+{
+  "bloomberg": {
+    "command": "C:/blp/bqnt/environments/bqnt-3/python.exe",
+    "args": ["C:/path/to/bloomberg-mcp/run_server.py"]
+  }
+}
+```
+
+> **Note:** bqnt-3 already has `blpapi` and `pandas` installed. The launcher adds `fastmcp` and `pydantic` automatically. BQL queries use the bqnt-3 subprocess backend — no xbbg or polars-bloomberg needed.
+
+#### Option B: uv (full dependency management)
+
+If you have [uv](https://docs.astral.sh/uv/) installed, it auto-installs all dependencies (including the optional xbbg and polars-bloomberg for faster BQL execution):
 
 ```bash
 claude mcp add bloomberg -- uv run --project /path/to/bloomberg-mcp python /path/to/bloomberg-mcp/server/server.py
@@ -47,27 +82,13 @@ Or add to `.mcp.json`:
 }
 ```
 
-#### Cursor / VS Code / LM Studio
+> **Tip:** Find your `uv` path with `where uv` (Windows) or `which uv` (Mac/Linux).
 
-Use full paths (these apps don't inherit your shell PATH):
-
-```json
-{
-  "bloomberg": {
-    "command": "C:/path/to/uv.exe",
-    "args": ["run", "--project", "C:/path/to/bloomberg-mcp", "python", "C:/path/to/bloomberg-mcp/server/server.py"]
-  }
-}
-```
-
-> **Tip:** Find your `uv` path with `where uv` (Windows) or `which uv` (Mac/Linux). If `uv` isn't installed, use `python -m uv` as a fallback.
-
-#### Without uv (manual install)
+#### Option C: Manual install
 
 ```bash
 cd bloomberg-mcp
 pip install -r server/requirements.txt
-# blpapi from Bloomberg's index:
 pip install --index-url=https://blpapi.bloomberg.com/repository/releases/python/simple/ blpapi
 ```
 
@@ -75,7 +96,7 @@ Then configure with `python` directly:
 
 ```json
 {
-  "command": "C:/path/to/python.exe",
+  "command": "python",
   "args": ["C:/path/to/bloomberg-mcp/server/server.py"]
 }
 ```
