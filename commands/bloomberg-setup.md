@@ -1,124 +1,63 @@
 ---
 name: bloomberg-setup
-description: Install and configure the Bloomberg MCP server — detects conda environments, checks Terminal connectivity, installs Python dependencies, patches .mcp.json with the correct Python path, and verifies the server works.
+description: Install and configure the Bloomberg MCP server for Claude Desktop, Claude Code, and Codex. Detects Bloomberg Python, installs dependencies, writes MCP configs, persists environment variables, and verifies connectivity.
 ---
 
 # Bloomberg MCP Server Setup
 
-Run the following setup steps in order. Stop and report clearly if any step fails.
+Run this from the plugin or repository root:
 
-## Step 1: Detect Python Environment
-
-Run the environment detector to find the best Python for Bloomberg:
-
-```bash
-python ${CLAUDE_PLUGIN_ROOT}/scripts/detect-python.py
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\setup-bloomberg-mcp.ps1
 ```
 
-This outputs JSON with the recommended Python path. Parse the result and note:
-- `python_path` — the full path to use
-- `env_type` — "conda" or "system"
-- `env_name` — which conda environment (if applicable)
-- `blpapi_installed` — whether blpapi is already available
-- `all_environments` — every detected environment for the user to review
+If `${CLAUDE_PLUGIN_ROOT}` is available, use it explicitly:
 
-**If multiple conda environments have blpapi**, show the user the options and let them choose. The detector picks the best one automatically (active env with blpapi > any env with blpapi > system python).
-
-**If no environment has blpapi yet**, recommend:
-- If conda is available: create a dedicated env (`conda create -n bloomberg python=3.11 -y && conda activate bloomberg`)
-- If no conda: use system Python (blpapi will be installed via pip in step 3)
-
-## Step 2: Verify Bloomberg Terminal is Running
-
-Using the detected Python path from step 1 (substitute `PYTHON_PATH` below):
-
-```bash
-PYTHON_PATH -c "
-import psutil
-bbg_names = {'wintrv.exe', 'bbcomm.exe', 'bblauncher.exe', 'bbg.exe'}
-found = [p.info['name'] for p in psutil.process_iter(['name']) if (p.info['name'] or '').lower() in bbg_names]
-if found:
-    print(f'Bloomberg Terminal detected: {found}')
-else:
-    print('ERROR: Bloomberg Terminal is not running.')
-    print('Please start Bloomberg Terminal (WIN+R -> wintrv) and log in before continuing.')
-    exit(1)
-"
+```powershell
+powershell -ExecutionPolicy Bypass -File "${CLAUDE_PLUGIN_ROOT}\scripts\setup-bloomberg-mcp.ps1"
 ```
 
-If this fails, tell the user to start Bloomberg Terminal and run `/bloomberg-setup` again.
+## What The Script Does
 
-## Step 3: Install Python Dependencies
+1. Selects the best Python, preferring Bloomberg's built-in `C:\blp\bqnt\environments\bqnt-3\python.exe`.
+2. Installs required packages: `fastmcp`, `pydantic`, and `psutil`.
+3. Tries to install optional helper packages: `xbbg`, `polars-bloomberg`, and `polars`.
+4. Persists user environment variables:
+   - `BLOOMBERG_PYTHON`
+   - `BLOOMBERG_MCP_HOME`
+5. Writes project `.mcp.json`.
+6. Updates Claude Desktop config at `%APPDATA%\Claude\claude_desktop_config.json`.
+7. Registers Claude Code with `claude mcp add-json` when the Claude CLI is installed.
+8. Updates Codex config at `%USERPROFILE%\.codex\config.toml` or `$CODEX_HOME\config.toml`.
+9. Verifies Bloomberg Terminal/API connectivity with the server's bounded status probe.
 
-Using the detected Python path:
+## Useful Flags
 
-**For conda environments:**
-```bash
-conda install -n ENV_NAME -c conda-forge blpapi xbbg -y
-PYTHON_PATH -m pip install fastmcp>=2.0.0 polars-bloomberg>=0.5.0 polars>=1.0.0 matplotlib>=3.8.0 altair>=5.0.0 psutil>=5.9.0 pydantic>=2.0.0
+```powershell
+# Configure only Codex
+powershell -ExecutionPolicy Bypass -File .\scripts\setup-bloomberg-mcp.ps1 -SkipClaudeDesktop -SkipClaudeCode
+
+# Configure only Claude Desktop / Claude Code
+powershell -ExecutionPolicy Bypass -File .\scripts\setup-bloomberg-mcp.ps1 -SkipCodex
+
+# Use a specific Python
+powershell -ExecutionPolicy Bypass -File .\scripts\setup-bloomberg-mcp.ps1 -PythonPath "C:\blp\bqnt\environments\bqnt-3\python.exe"
+
+# Write configs without installing packages
+powershell -ExecutionPolicy Bypass -File .\scripts\setup-bloomberg-mcp.ps1 -SkipPackageInstall
 ```
 
-**For system Python:**
-```bash
-PYTHON_PATH -m pip install fastmcp>=2.0.0 xbbg>=0.11.0 polars-bloomberg>=0.5.0 blpapi>=3.24.0 polars>=1.0.0 matplotlib>=3.8.0 altair>=5.0.0 psutil>=5.9.0 pydantic>=2.0.0
-```
+## If Setup Cannot Verify Bloomberg
 
-If `blpapi` fails via pip, suggest:
-- Bloomberg's own index: `pip install blpapi --index-url=https://bcms.bloomberg.com/pip/simple/`
-- Or conda: `conda install -c conda-forge blpapi`
+Tell the user to:
 
-## Step 4: Test Bloomberg API Connectivity
+1. Start Bloomberg Terminal with `wintrv`.
+2. Log in fully.
+3. Wait until `wintrv.exe` and `bbcomm.exe` are visible.
+4. Re-run `/bloomberg-setup`.
 
-```bash
-PYTHON_PATH -c "
-from xbbg import blp
-df = blp.bdp('IBM US Equity', 'PX_LAST')
-if df is not None and not df.empty:
-    print(f'Bloomberg API connected. IBM last price: {df.iloc[0,0]}')
-else:
-    print('ERROR: Bloomberg API returned empty data. Check Terminal is fully loaded.')
-    exit(1)
-"
-```
+## Completion Message
 
-## Step 5: Patch .mcp.json with Detected Python Path
+If setup succeeds, report:
 
-**This is critical** — update the `.mcp.json` so the MCP server uses the correct Python.
-
-Read `${CLAUDE_PLUGIN_ROOT}/.mcp.json` and replace the `"command": "python"` with the full path to the detected Python executable. For example, if the detected path is `C:/Users/user/.conda/envs/bloomberg/python.exe`, the `.mcp.json` should become:
-
-```json
-{
-  "mcpServers": {
-    "bloomberg": {
-      "command": "C:/Users/user/.conda/envs/bloomberg/python.exe",
-      "args": ["-m", "fastmcp", "run", "${CLAUDE_PLUGIN_ROOT}/server/server.py"],
-      "env": {
-        "PYTHONPATH": "${CLAUDE_PLUGIN_ROOT}/server"
-      }
-    }
-  }
-}
-```
-
-Use forward slashes in the path even on Windows. Write the updated `.mcp.json` back to `${CLAUDE_PLUGIN_ROOT}/.mcp.json`.
-
-## Step 6: Test the MCP Server
-
-```bash
-timeout 5 PYTHON_PATH -m fastmcp run ${CLAUDE_PLUGIN_ROOT}/server/server.py 2>&1 || true
-```
-
-## Completion
-
-If all steps pass, report:
-
-> Bloomberg MCP server is ready! You now have access to 10 Bloomberg tools:
-> `bloomberg_status`, `bloomberg_bdp`, `bloomberg_bdh`, `bloomberg_bdib`, `bloomberg_bql`, `bloomberg_bql_build`, `bloomberg_bond_info`, `bloomberg_screen`, `bloomberg_field_search`, `bloomberg_chart`
->
-> **Python**: {detected python path}
-> **Environment**: {env_type} ({env_name})
->
-> Try: "What's the current price of AAPL?" or "Show me SPY's performance over the last year"
->
-> If using Claude Desktop, restart it once to pick up the MCP server registration.
+> Bloomberg MCP is installed. Restart Claude Desktop, Claude Code, or Codex to reload the MCP configuration. Then test with `bloomberg_status` or ask for a simple Bloomberg quote such as IBM or AAPL.

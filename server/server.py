@@ -17,11 +17,13 @@ Run:
 from __future__ import annotations
 
 import asyncio
+import importlib.util
 import logging
 import sys
+import threading
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -30,12 +32,94 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 from fastmcp import FastMCP, Context
 
-from bloomberg_client import BloombergClient
+from bloomberg_client import BloombergClient, BloombergUnavailable
 from bql_builder import build_bql_from_intent, validate_bql
 from utils import check_bloomberg_status
 
 logger = logging.getLogger("bloomberg_mcp")
 logging.basicConfig(level=logging.INFO)
+
+# Default per-tool timeouts. Tools accept an override.
+DEFAULT_TIMEOUT_SEC = {
+    "status": 12,   # process check is instant; deep probe gets its own bound
+    "bdp": 25,
+    "bdh": 45,
+    "bdib": 30,
+    "bql": 60,
+    "bond_info": 30,
+    "screen": 60,
+    "field_search": 15,
+}
+
+
+async def _run_bounded(
+    fn: Callable[..., Any],
+    *args,
+    timeout: float,
+    label: str,
+    on_timeout: Callable[[], None] | None = None,
+) -> Any:
+    """Run a blocking Bloomberg call with a hard timeout.
+
+    Returns the function result on success, or a structured error dict on
+    timeout, breaker-open, or any underlying exception. Never raises.
+
+    Bloomberg's APIs can block inside native/session code that Python cannot
+    interrupt. Run each call on a short-lived daemon thread so an MCP request
+    can return a timeout response without waiting for the stuck worker.
+    """
+    loop = asyncio.get_running_loop()
+    future: asyncio.Future[Any] = loop.create_future()
+
+    def _complete(result: Any = None, exc: Exception | None = None) -> None:
+        if future.done():
+            return
+        if exc is not None:
+            future.set_exception(exc)
+        else:
+            future.set_result(result)
+
+    def _worker() -> None:
+        try:
+            result = fn(*args)
+        except Exception as exc:
+            try:
+                loop.call_soon_threadsafe(_complete, None, exc)
+            except RuntimeError:
+                pass
+        else:
+            try:
+                loop.call_soon_threadsafe(_complete, result, None)
+            except RuntimeError:
+                pass
+
+    thread = threading.Thread(
+        target=_worker,
+        name=f"bloomberg-mcp-{label}",
+        daemon=True,
+    )
+    thread.start()
+
+    try:
+        return await asyncio.wait_for(future, timeout=timeout)
+    except asyncio.TimeoutError:
+        logger.warning("%s timed out after %.1fs", label, timeout)
+        timeout_text = f"{timeout:g}s"
+        if on_timeout is not None:
+            try:
+                on_timeout()
+            except Exception:
+                logger.exception("Timeout handler failed for %s", label)
+        return _error_response(
+            f"{label} exceeded {timeout_text} timeout",
+            "timeout_error",
+            "Bloomberg Terminal may be unresponsive. Try bloomberg_status, "
+            "then bloomberg_reset if processes are running but calls hang.",
+        )
+    except BloombergUnavailable as exc:
+        return _error_response(str(exc), "circuit_open")
+    except Exception as exc:
+        return _error_response(str(exc), "bloomberg_error", "Check BQL syntax and Bloomberg connectivity")
 
 # Paths
 SERVER_DIR = Path(__file__).parent
@@ -195,6 +279,14 @@ def _get_client(ctx: Context) -> BloombergClient:
     return ctx.lifespan_context["bloomberg"]
 
 
+def _module_available(module_name: str) -> bool:
+    """Return True if a module can be imported without importing it now."""
+    try:
+        return importlib.util.find_spec(module_name) is not None
+    except (ImportError, ValueError):
+        return False
+
+
 # ======================================================================
 # Pydantic input models
 # ======================================================================
@@ -203,6 +295,7 @@ class BdpInput(BaseModel):
     securities: list[str] = Field(..., min_length=1, description="Bloomberg tickers, e.g. ['AAPL US Equity']")
     fields: list[str] = Field(..., min_length=1, description="Bloomberg field mnemonics, e.g. ['PX_LAST']")
     overrides: dict[str, str] | None = Field(None, description="Optional field overrides")
+    timeout: int = Field(DEFAULT_TIMEOUT_SEC["bdp"], ge=3, le=120, description="Hard timeout in seconds")
 
 
 class BdhInput(BaseModel):
@@ -212,6 +305,7 @@ class BdhInput(BaseModel):
     end_date: str | None = Field(None, description="End date YYYY-MM-DD (default: today)")
     periodicity: str | None = Field(None, description="D, W, M, Q, Y")
     adjust: str | None = Field(None, description="Adjustment: all, split, etc.")
+    timeout: int = Field(DEFAULT_TIMEOUT_SEC["bdh"], ge=3, le=180, description="Hard timeout in seconds")
 
     @field_validator("start_date", "end_date", mode="before")
     @classmethod
@@ -229,12 +323,13 @@ class BdibInput(BaseModel):
     date: str = Field(..., description="Trading date YYYY-MM-DD")
     interval: int = Field(5, ge=1, le=1440, description="Bar interval in minutes")
     session: str = Field("allday", description="Session: allday, day, am, pm, etc.")
+    timeout: int = Field(DEFAULT_TIMEOUT_SEC["bdib"], ge=3, le=180, description="Hard timeout in seconds")
 
 
 class BqlInput(BaseModel):
     query: str = Field(..., min_length=5, description="BQL query string")
     validate_first: bool = Field(True, description="Validate syntax before executing")
-    timeout: int = Field(60, ge=5, le=300, description="Timeout in seconds")
+    timeout: int = Field(DEFAULT_TIMEOUT_SEC["bql"], ge=5, le=300, description="Timeout in seconds")
 
 
 class BqlBuildInput(BaseModel):
@@ -246,6 +341,7 @@ class BondInfoInput(BaseModel):
     securities: list[str] = Field(..., min_length=1)
     include_risk: bool = Field(True, description="Include duration, convexity, DV01")
     include_spreads: bool = Field(True, description="Include OAS, Z-spread, ASW")
+    timeout: int = Field(DEFAULT_TIMEOUT_SEC["bond_info"], ge=3, le=120, description="Hard timeout in seconds")
 
 
 class ScreenInput(BaseModel):
@@ -253,11 +349,13 @@ class ScreenInput(BaseModel):
     bql_filter: str | None = Field(None, description="Ad-hoc BQL filter expression")
     fields: list[str] = Field(default_factory=lambda: ["name", "px_last"], description="Fields to retrieve")
     max_results: int = Field(100, ge=1, le=5000)
+    timeout: int = Field(DEFAULT_TIMEOUT_SEC["screen"], ge=3, le=180, description="Hard timeout in seconds")
 
 
 class FieldSearchInput(BaseModel):
     query: str = Field(..., min_length=2, description="Search term for field mnemonics")
     max_results: int = Field(20, ge=1, le=100)
+    timeout: int = Field(DEFAULT_TIMEOUT_SEC["field_search"], ge=3, le=60, description="Hard timeout in seconds")
 
 
 
@@ -266,31 +364,63 @@ class FieldSearchInput(BaseModel):
 # ======================================================================
 
 @mcp.tool()
-async def bloomberg_status() -> dict[str, Any]:
+async def bloomberg_status(deep_check: bool = False, probe_timeout: float = 10.0, ctx: Context = None) -> dict[str, Any]:
     """Check Bloomberg Terminal connectivity and API status.
 
     Returns process list, terminal_running flag, api_connected flag,
-    and available BQL execution backends (polars-bloomberg, xbbg, bqnt-3).
-    No arguments required.
-    """
-    status = await asyncio.to_thread(check_bloomberg_status)
+    available BQL execution backends, and circuit-breaker state.
 
-    # Also report BQL backend availability
+    By default this is a FAST process-only check (sub-second, never hangs).
+    Pass ``deep_check=True`` to also issue a bounded API probe against
+    IBM PX_LAST with ``probe_timeout`` seconds (default 10s) to confirm the
+    session is alive.
+    """
+    try:
+        probe_timeout = float(probe_timeout)
+    except (TypeError, ValueError):
+        return _error_response("probe_timeout must be numeric", "validation_error")
+    probe_timeout = max(0.5, min(probe_timeout, 30.0))
+
+    on_timeout = None
+    if ctx is not None:
+        try:
+            client = _get_client(ctx)
+            on_timeout = lambda: client.record_timeout("bloomberg_status")
+        except Exception:
+            on_timeout = None
+
+    # The status call itself must never hang. Total budget = probe_timeout + 3s
+    # for the synchronous process scan.
+    total_budget = (probe_timeout + 3.0) if deep_check else 3.0
+    status = await _run_bounded(
+        check_bloomberg_status,
+        deep_check,
+        probe_timeout,
+        timeout=total_budget,
+        label="bloomberg_status",
+        on_timeout=on_timeout,
+    )
+
+    # If the bounded runner returned an error envelope, surface it as-is.
+    if isinstance(status, dict) and "error" in status and "type" in status:
+        return status
+
+    # Also report BQL backend availability and breaker state.
     from bql_subprocess import is_available as bqnt3_available
     backends = []
-    try:
-        from polars_bloomberg import BQuery  # noqa: F401
+    if _module_available("polars_bloomberg"):
         backends.append("polars-bloomberg")
-    except ImportError:
-        pass
-    try:
-        from xbbg import blp  # noqa: F401
+    if _module_available("xbbg"):
         backends.append("xbbg")
-    except ImportError:
-        pass
     if bqnt3_available():
         backends.append("bqnt-3-subprocess")
     status["bql_backends"] = backends
+
+    if ctx is not None:
+        try:
+            status["breaker"] = _get_client(ctx).breaker_state()
+        except Exception:
+            pass
 
     return status
 
@@ -300,10 +430,19 @@ async def bloomberg_status() -> dict[str, Any]:
 # ======================================================================
 
 @mcp.tool()
-async def bloomberg_bdp(securities: list[str], fields: list[str], overrides: dict[str, str] | None = None, ctx: Context = None) -> dict[str, Any]:
+async def bloomberg_bdp(
+    securities: list[str],
+    fields: list[str],
+    overrides: dict[str, str] | None = None,
+    timeout: int = DEFAULT_TIMEOUT_SEC["bdp"],
+    ctx: Context = None,
+) -> dict[str, Any]:
     """Fetch Bloomberg reference/snapshot data (BDP).
 
     Returns current values for specified fields across one or more securities.
+    Hard timeout enforced; if the underlying Bloomberg call hangs, this tool
+    returns a structured timeout_error within ``timeout`` seconds rather than
+    blocking the MCP client.
 
     Example: securities=["AAPL US Equity"], fields=["PX_LAST", "Security_Name"]
 
@@ -315,15 +454,16 @@ async def bloomberg_bdp(securities: list[str], fields: list[str], overrides: dic
     'US912810 Govt', '/cusip/912810TD8', '/isin/US912810TD80'.
     """
     try:
-        inp = BdpInput(securities=securities, fields=fields, overrides=overrides)
+        inp = BdpInput(securities=securities, fields=fields, overrides=overrides, timeout=timeout)
     except Exception as e:
         return _error_response(str(e), "validation_error")
 
-    try:
-        client = _get_client(ctx)
-        return await asyncio.to_thread(client.bdp, inp.securities, inp.fields, inp.overrides)
-    except Exception as e:
-        return _error_response(str(e), "bloomberg_error", "Ensure Bloomberg Terminal is running")
+    client = _get_client(ctx)
+    return await _run_bounded(
+        client.bdp, inp.securities, inp.fields, inp.overrides,
+        timeout=inp.timeout, label="bloomberg_bdp",
+        on_timeout=lambda: client.record_timeout("bloomberg_bdp"),
+    )
 
 
 # ======================================================================
@@ -338,24 +478,28 @@ async def bloomberg_bdh(
     end_date: str | None = None,
     periodicity: str | None = None,
     adjust: str | None = None,
+    timeout: int = DEFAULT_TIMEOUT_SEC["bdh"],
     ctx: Context = None,
 ) -> dict[str, Any]:
     """Fetch Bloomberg historical time series data (BDH).
 
-    Returns end-of-day values over a date range.
+    Returns end-of-day values over a date range. Hard timeout enforced.
     Example: securities=["SPY US Equity"], fields=["PX_LAST"], start_date="2024-01-01"
     Periodicity options: D (daily), W (weekly), M (monthly), Q (quarterly), Y (yearly)
     """
     try:
-        inp = BdhInput(securities=securities, fields=fields, start_date=start_date, end_date=end_date, periodicity=periodicity, adjust=adjust)
+        inp = BdhInput(securities=securities, fields=fields, start_date=start_date,
+                       end_date=end_date, periodicity=periodicity, adjust=adjust, timeout=timeout)
     except Exception as e:
         return _error_response(str(e), "validation_error")
 
-    try:
-        client = _get_client(ctx)
-        return await asyncio.to_thread(client.bdh, inp.securities, inp.fields, inp.start_date, inp.end_date, inp.periodicity, inp.adjust)
-    except Exception as e:
-        return _error_response(str(e), "bloomberg_error", "Ensure Bloomberg Terminal is running")
+    client = _get_client(ctx)
+    return await _run_bounded(
+        client.bdh, inp.securities, inp.fields, inp.start_date,
+        inp.end_date, inp.periodicity, inp.adjust,
+        timeout=inp.timeout, label="bloomberg_bdh",
+        on_timeout=lambda: client.record_timeout("bloomberg_bdh"),
+    )
 
 
 # ======================================================================
@@ -368,23 +512,26 @@ async def bloomberg_bdib(
     date: str,
     interval: int = 5,
     session: str = "allday",
+    timeout: int = DEFAULT_TIMEOUT_SEC["bdib"],
     ctx: Context = None,
 ) -> dict[str, Any]:
     """Fetch Bloomberg intraday bar data (BDIB).
 
     Returns OHLCV bars at specified minute intervals for a single trading day.
+    Hard timeout enforced.
     Example: security="SPY US Equity", date="2024-01-15", interval=5
     """
     try:
-        inp = BdibInput(security=security, date=date, interval=interval, session=session)
+        inp = BdibInput(security=security, date=date, interval=interval, session=session, timeout=timeout)
     except Exception as e:
         return _error_response(str(e), "validation_error")
 
-    try:
-        client = _get_client(ctx)
-        return await asyncio.to_thread(client.bdib, inp.security, inp.date, inp.interval, inp.session)
-    except Exception as e:
-        return _error_response(str(e), "bloomberg_error", "Ensure Bloomberg Terminal is running")
+    client = _get_client(ctx)
+    return await _run_bounded(
+        client.bdib, inp.security, inp.date, inp.interval, inp.session,
+        timeout=inp.timeout, label="bloomberg_bdib",
+        on_timeout=lambda: client.record_timeout("bloomberg_bdib"),
+    )
 
 
 # ======================================================================
@@ -429,11 +576,14 @@ async def bloomberg_bql(query: str, validate_first: bool = True, timeout: int = 
                 suggestion="; ".join(validation["issues"]),
             )
 
-    try:
-        client = _get_client(ctx)
-        return await asyncio.to_thread(client.bql, inp.query, inp.timeout)
-    except Exception as e:
-        return _error_response(str(e), "bloomberg_error", "Check BQL syntax and Bloomberg connectivity")
+    client = _get_client(ctx)
+    # Give the outer wait_for a small grace period over the inner bqnt-3
+    # subprocess timeout (subprocess.run already adds +10s itself).
+    return await _run_bounded(
+        client.bql, inp.query, inp.timeout,
+        timeout=inp.timeout + 15, label="bloomberg_bql",
+        on_timeout=lambda: client.record_timeout("bloomberg_bql"),
+    )
 
 
 # ======================================================================
@@ -466,26 +616,29 @@ async def bloomberg_bond_info(
     securities: list[str],
     include_risk: bool = True,
     include_spreads: bool = True,
+    timeout: int = DEFAULT_TIMEOUT_SEC["bond_info"],
     ctx: Context = None,
 ) -> dict[str, Any]:
     """Fetch fixed income analytics for bonds.
 
     Returns coupon, maturity, price, yield, and optionally duration/convexity/DV01
-    and OAS/Z-spread/ASW.
+    and OAS/Z-spread/ASW. Hard timeout enforced.
 
     Example: securities=["T 4.5 05/15/38 Govt"]
     Use /cusip/ or /isin/ prefixes: securities=["/cusip/912810TD8"]
     """
     try:
-        inp = BondInfoInput(securities=securities, include_risk=include_risk, include_spreads=include_spreads)
+        inp = BondInfoInput(securities=securities, include_risk=include_risk,
+                            include_spreads=include_spreads, timeout=timeout)
     except Exception as e:
         return _error_response(str(e), "validation_error")
 
-    try:
-        client = _get_client(ctx)
-        return await asyncio.to_thread(client.bond_info, inp.securities, inp.include_risk, inp.include_spreads)
-    except Exception as e:
-        return _error_response(str(e), "bloomberg_error", "Ensure Bloomberg Terminal is running")
+    client = _get_client(ctx)
+    return await _run_bounded(
+        client.bond_info, inp.securities, inp.include_risk, inp.include_spreads,
+        timeout=inp.timeout, label="bloomberg_bond_info",
+        on_timeout=lambda: client.record_timeout("bloomberg_bond_info"),
+    )
 
 
 # ======================================================================
@@ -498,11 +651,13 @@ async def bloomberg_screen(
     bql_filter: str | None = None,
     fields: list[str] | None = None,
     max_results: int = 100,
+    timeout: int = DEFAULT_TIMEOUT_SEC["screen"],
     ctx: Context = None,
 ) -> dict[str, Any]:
     """Screen securities using a saved Bloomberg screen or ad-hoc BQL filter.
 
     Provide EITHER screen_name (for saved BEQS screens) OR bql_filter (ad-hoc).
+    Hard timeout enforced.
 
     Example (saved): screen_name="MyInvestmentGradeScreen"
     Example (ad-hoc): bql_filter="crncy=='USD' and rtg_sp() in ['A+','A','A-']",
@@ -510,21 +665,26 @@ async def bloomberg_screen(
     """
     fields = fields or ["name", "px_last"]
     try:
-        inp = ScreenInput(screen_name=screen_name, bql_filter=bql_filter, fields=fields, max_results=max_results)
+        inp = ScreenInput(screen_name=screen_name, bql_filter=bql_filter,
+                          fields=fields, max_results=max_results, timeout=timeout)
     except Exception as e:
         return _error_response(str(e), "validation_error")
 
     if not inp.screen_name and not inp.bql_filter:
         return _error_response("Provide either screen_name or bql_filter", "validation_error")
 
-    try:
-        client = _get_client(ctx)
-        if inp.screen_name:
-            return await asyncio.to_thread(client.screen_eqs, inp.screen_name)
-        else:
-            return await asyncio.to_thread(client.screen_bql, inp.bql_filter, inp.fields, inp.max_results)
-    except Exception as e:
-        return _error_response(str(e), "bloomberg_error", "Ensure Bloomberg Terminal is running")
+    client = _get_client(ctx)
+    if inp.screen_name:
+        return await _run_bounded(
+            client.screen_eqs, inp.screen_name,
+            timeout=inp.timeout, label="bloomberg_screen(beqs)",
+            on_timeout=lambda: client.record_timeout("bloomberg_screen(beqs)"),
+        )
+    return await _run_bounded(
+        client.screen_bql, inp.bql_filter, inp.fields, inp.max_results,
+        timeout=inp.timeout, label="bloomberg_screen(bql)",
+        on_timeout=lambda: client.record_timeout("bloomberg_screen(bql)"),
+    )
 
 
 # ======================================================================
@@ -532,23 +692,33 @@ async def bloomberg_screen(
 # ======================================================================
 
 @mcp.tool()
-async def bloomberg_field_search(query: str, max_results: int = 20, ctx: Context = None) -> dict[str, Any]:
+async def bloomberg_field_search(
+    query: str,
+    max_results: int = 20,
+    timeout: int = DEFAULT_TIMEOUT_SEC["field_search"],
+    ctx: Context = None,
+) -> dict[str, Any]:
     """Search Bloomberg field mnemonics by keyword.
 
     Helps discover the correct field names for BDP/BDH/BQL queries.
+    Hard timeout enforced.
     Example: query="yield to maturity"
     """
     try:
-        inp = FieldSearchInput(query=query, max_results=max_results)
+        inp = FieldSearchInput(query=query, max_results=max_results, timeout=timeout)
     except Exception as e:
         return _error_response(str(e), "validation_error")
 
-    try:
-        client = _get_client(ctx)
-        results = await asyncio.to_thread(client.field_search, inp.query, inp.max_results)
-        return {"fields": results, "count": len(results), "query": inp.query}
-    except Exception as e:
-        return _error_response(str(e), "bloomberg_error", "Ensure Bloomberg Terminal is running")
+    client = _get_client(ctx)
+    result = await _run_bounded(
+        client.field_search, inp.query, inp.max_results,
+        timeout=inp.timeout, label="bloomberg_field_search",
+        on_timeout=lambda: client.record_timeout("bloomberg_field_search"),
+    )
+    # If error envelope, return as-is.
+    if isinstance(result, dict) and "error" in result and "type" in result:
+        return result
+    return {"fields": result, "count": len(result) if isinstance(result, list) else 0, "query": inp.query}
 
 
 # ======================================================================
@@ -667,6 +837,34 @@ async def bloomberg_bql_examples(domain: str) -> dict[str, Any]:
             "Asset class suffix required: Equity, Index, Corp, Govt, Comdty, Curncy, Mtge",
         ],
     }
+
+
+# ======================================================================
+# Tool 12: bloomberg_reset
+# ======================================================================
+
+@mcp.tool()
+async def bloomberg_reset(ctx: Context = None) -> dict[str, Any]:
+    """Force-refresh the cached Bloomberg session and clear the circuit breaker.
+
+    Call this when:
+    - bloomberg_status reports terminal_running=True but data calls still fail
+    - You've restarted the Bloomberg Terminal and want the MCP server to
+      pick up the new session without restarting the server itself
+    - The circuit breaker is open and you want to force a probe
+
+    After reset, the next data call will lazily re-import xbbg /
+    polars-bloomberg and establish a fresh session.
+    """
+    if ctx is None:
+        return _error_response("Context unavailable", "internal_error")
+    try:
+        client = _get_client(ctx)
+        result = client.force_refresh()
+        result["breaker_after"] = client.breaker_state()
+        return result
+    except Exception as exc:
+        return _error_response(str(exc), "internal_error")
 
 
 # ======================================================================

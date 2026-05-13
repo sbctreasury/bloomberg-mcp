@@ -2,17 +2,19 @@
 Detect the best Python environment for running the Bloomberg MCP server.
 
 Checks (in order):
-1. Active conda environment with blpapi already installed
-2. Any conda environment with blpapi installed
-3. System Python with blpapi installed
-4. Active conda environment (blpapi not yet installed)
-5. System Python (fallback)
+1. Bloomberg bqnt-3 Python with the bql package
+2. Active conda environment with blpapi already installed
+3. Any conda environment with blpapi installed
+4. System Python with blpapi installed
+5. Active conda environment (blpapi not yet installed)
+6. System Python (fallback)
 
 Outputs JSON with:
   - python_path: full path to python executable
   - env_type: "conda" | "system"
   - env_name: conda environment name (or "system")
   - blpapi_installed: bool
+  - bql_installed: bool
   - fastmcp_installed: bool
 """
 
@@ -33,6 +35,26 @@ def _run(cmd: list[str], timeout: int = 10) -> str | None:
 
 def _check_package(python_path: str, package: str) -> bool:
     return _run([python_path, "-c", f"import {package}"]) is not None
+
+
+def _candidate(
+    python_path: str,
+    env_type: str,
+    env_name: str,
+    priority: int,
+) -> dict:
+    has_blpapi = _check_package(python_path, "blpapi")
+    has_bql = _check_package(python_path, "bql")
+    has_fastmcp = _check_package(python_path, "fastmcp")
+    return {
+        "python_path": python_path,
+        "env_type": env_type,
+        "env_name": env_name,
+        "blpapi_installed": has_blpapi,
+        "bql_installed": has_bql,
+        "fastmcp_installed": has_fastmcp,
+        "priority": priority,
+    }
 
 
 def _get_conda_envs() -> list[dict]:
@@ -74,6 +96,14 @@ def detect() -> dict:
 
     candidates = []
 
+    # 0. Bloomberg bqnt-3 Python is the simplest path on Terminal machines.
+    bqnt = Path(r"C:\blp\bqnt\environments\bqnt-3\python.exe")
+    if bqnt.exists():
+        cand = _candidate(str(bqnt), "bloomberg-bqnt", "bqnt-3", 12)
+        if not cand["bql_installed"]:
+            cand["priority"] = 4
+        candidates.append(cand)
+
     # 1. Active conda environment
     if active_prefix:
         py = Path(active_prefix) / "python.exe"
@@ -81,15 +111,12 @@ def detect() -> dict:
             py = Path(active_prefix) / "bin" / "python"
         if py.exists():
             has_blpapi = _check_package(str(py), "blpapi")
-            has_fastmcp = _check_package(str(py), "fastmcp")
-            candidates.append({
-                "python_path": str(py),
-                "env_type": "conda",
-                "env_name": active_conda or "unknown",
-                "blpapi_installed": has_blpapi,
-                "fastmcp_installed": has_fastmcp,
-                "priority": 10 if has_blpapi else 3,
-            })
+            candidates.append(_candidate(
+                str(py),
+                "conda",
+                active_conda or "unknown",
+                10 if has_blpapi else 3,
+            ))
 
     # 2. All conda environments
     for env in _get_conda_envs():
@@ -97,29 +124,23 @@ def detect() -> dict:
         if active_prefix and str(Path(active_prefix)) == env["env_path"]:
             continue
         has_blpapi = _check_package(env["python_path"], "blpapi")
-        has_fastmcp = _check_package(env["python_path"], "fastmcp")
-        candidates.append({
-            "python_path": env["python_path"],
-            "env_type": "conda",
-            "env_name": env["name"],
-            "blpapi_installed": has_blpapi,
-            "fastmcp_installed": has_fastmcp,
-            "priority": 8 if has_blpapi else 1,
-        })
+        candidates.append(_candidate(
+            env["python_path"],
+            "conda",
+            env["name"],
+            8 if has_blpapi else 1,
+        ))
 
     # 3. System Python
     sys_python = sys.executable
     if sys_python:
         has_blpapi = _check_package(sys_python, "blpapi")
-        has_fastmcp = _check_package(sys_python, "fastmcp")
-        candidates.append({
-            "python_path": sys_python,
-            "env_type": "system",
-            "env_name": "system",
-            "blpapi_installed": has_blpapi,
-            "fastmcp_installed": has_fastmcp,
-            "priority": 9 if has_blpapi else 2,
-        })
+        candidates.append(_candidate(
+            sys_python,
+            "system",
+            "system",
+            9 if has_blpapi else 2,
+        ))
 
     # Sort by priority (highest first)
     candidates.sort(key=lambda c: c["priority"], reverse=True)
@@ -130,15 +151,19 @@ def detect() -> dict:
             "env_type": "system",
             "env_name": "system",
             "blpapi_installed": False,
+            "bql_installed": False,
             "fastmcp_installed": False,
             "all_environments": [],
         }
 
-    best = candidates[0]
-    best.pop("priority", None)
+    cleaned_candidates = []
     for c in candidates:
-        c.pop("priority", None)
-    best["all_environments"] = candidates
+        cleaned = dict(c)
+        cleaned.pop("priority", None)
+        cleaned_candidates.append(cleaned)
+
+    best = dict(cleaned_candidates[0])
+    best["all_environments"] = cleaned_candidates
 
     return best
 

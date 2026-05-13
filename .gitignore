@@ -12,6 +12,9 @@ uv.lock
 node_modules/
 *.csv
 *.json
+!.mcp.json
+!.claude-plugin/
+!.claude-plugin/plugin.json
 !package.json
 !package-lock.json
 bonds_results.json

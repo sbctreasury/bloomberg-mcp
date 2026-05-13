@@ -1,7 +1,7 @@
 ---
 name: bloomberg-query
-description: Generate and execute Bloomberg queries — BDP, BDH, BDIB, BQL, bond analytics, screening, field search, and charting. Use when the user asks for financial data, market prices, historical data, bond analytics, security screening, or any Bloomberg Terminal data. Triggers on mentions of tickers, securities, BQL, Bloomberg, financial data, market data, yield, spread, duration, or portfolio analytics.
-version: 1.0.0
+description: Generate and execute Bloomberg queries — BDP, BDH, BDIB, BQL, bond analytics, screening, field search, references, status, and reset. Use when the user asks for financial data, market prices, historical data, bond analytics, security screening, or any Bloomberg Terminal data. Triggers on mentions of tickers, securities, BQL, Bloomberg, financial data, market data, yield, spread, duration, or portfolio analytics.
+version: 1.1.0
 metadata:
   filePattern: "**/bloomberg*/**"
   bashPattern: "bloomberg|blpapi|xbbg|bql"
@@ -9,7 +9,7 @@ metadata:
 
 # Bloomberg Query Generation
 
-You have access to 10 Bloomberg MCP tools. This skill teaches you how to use them effectively.
+You have access to 12 Bloomberg MCP tools. This skill teaches you how to use them effectively.
 
 ## Available Tools
 
@@ -24,7 +24,9 @@ You have access to 10 Bloomberg MCP tools. This skill teaches you how to use the
 | `bloomberg_bond_info` | Fixed income analytics | Yes |
 | `bloomberg_screen` | Security screening (saved or ad-hoc) | Yes |
 | `bloomberg_field_search` | Discover field mnemonics | Yes |
-| `bloomberg_chart` | Generate charts from data | No |
+| `bloomberg_bql_reference` | Read BQL syntax reference docs | No |
+| `bloomberg_bql_examples` | Get verified BQL examples | No |
+| `bloomberg_reset` | Clear cached sessions and circuit breaker | No |
 
 ## Tool Selection Guide
 
@@ -34,7 +36,7 @@ You have access to 10 Bloomberg MCP tools. This skill teaches you how to use the
 **"Screen for bonds where..."** → `bloomberg_bql` or `bloomberg_screen`
 **"What fields exist for..."** → `bloomberg_field_search`
 **"Bond yield, duration, spread"** → `bloomberg_bond_info`
-**"Chart the results"** → `bloomberg_chart` (after fetching data)
+**"Chart the results"** → fetch data, then create a chart with Python/matplotlib or another local charting library
 **Complex multi-entity queries** → `bloomberg_bql`
 
 ## Ticker Format
@@ -231,46 +233,44 @@ bloomberg_field_search(query="earnings per share")
 bloomberg_field_search(query="credit default swap spread")
 ```
 
+## References And Reset
+
+Read reference docs before writing non-trivial BQL:
+
+```
+bloomberg_bql_reference(domain="equity")
+bloomberg_bql_examples(domain="fixed-income")
+```
+
+If Bloomberg Terminal was restarted or calls are timing out, reset the cached session:
+
+```
+bloomberg_reset()
+```
+
 ## Charting
 
-After fetching data, generate professional charts:
-
-```
-# First fetch data
-data = bloomberg_bdh(securities=["SPY US Equity"], fields=["PX_LAST"], start_date="2024-01-01")
-
-# Then chart it
-bloomberg_chart(
-  chart_type="timeseries",    # timeseries, bar, scatter, heatmap, multipanel, facet
-  library="matplotlib",       # matplotlib (PNG) or altair (interactive HTML)
-  data_json=data["data"],     # Pass the .data array from any bloomberg result
-  title="S&P 500 ETF — 1 Year Performance"
-)
-```
-
-### Chart types by library:
-- **matplotlib**: timeseries, bar, scatter, heatmap, multipanel
-- **altair**: timeseries, bar, scatter, facet
+This MCP server returns structured data. It does not expose a charting tool. After fetching data, create charts with local Python, matplotlib, Plotly, Altair, Excel, or the charting tools available in the current client.
 
 ## Workflow Patterns
 
 ### Equity Research Quick Look
 1. `bloomberg_bdp` → current price, P/E, market cap, sector
 2. `bloomberg_bdh` → 1Y price history
-3. `bloomberg_chart` → timeseries chart
+3. Local charting -> timeseries chart
 4. `bloomberg_bql` → peer comparison via index members
 
 ### Fixed Income Analysis
 1. `bloomberg_bond_info` → yield, duration, spreads
 2. `bloomberg_screen` → find comparable bonds
 3. `bloomberg_bql` → relative value analysis
-4. `bloomberg_chart` → spread comparison bar chart
+4. Local charting -> spread comparison bar chart
 
 ### Portfolio Overview
 1. `bloomberg_bdp` → current prices for all holdings
 2. `bloomberg_bdh` → historical performance
 3. `bloomberg_bql` → sector/rating aggregation
-4. `bloomberg_chart` → multipanel performance chart
+4. Local charting -> multipanel performance chart
 
 ### Always Check Connectivity First
 If any tool returns an error, run `bloomberg_status()` to diagnose. Common issues:

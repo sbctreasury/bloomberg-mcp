@@ -4,7 +4,7 @@ A self-documenting [Model Context Protocol](https://modelcontextprotocol.io/) se
 
 ## Features
 
-- **11 tools** — BDP, BDH, BDIB, BQL, bond analytics, screening, field search, reference docs, examples
+- **12 tools** — status/reset, BDP, BDH, BDIB, BQL, bond analytics, screening, field search, reference docs, examples
 - **17 BQL reference files** — comprehensive syntax documentation served as MCP resources
 - **27 verified test queries** — covering equity, fixed income, credit, CDS, returns, curves, and funds
 - **3-tier BQL execution** — polars-bloomberg → xbbg → bqnt-3 subprocess (automatic fallback)
@@ -17,13 +17,38 @@ A self-documenting [Model Context Protocol](https://modelcontextprotocol.io/) se
 
 ## Installation
 
-### 1. Clone the repo
+### Agent-friendly setup
+
+On a Bloomberg Terminal workstation, Claude or Codex can install and configure the MCP with:
+
+```powershell
+git clone https://github.com/sbctreasury/bloomberg-mcp.git
+cd bloomberg-mcp
+powershell -ExecutionPolicy Bypass -File .\scripts\setup-bloomberg-mcp.ps1
+```
+
+The setup script:
+
+- Uses Bloomberg's built-in `C:\blp\bqnt\environments\bqnt-3\python.exe` when available
+- Installs required Python packages (`fastmcp`, `pydantic`, `psutil`) and best-effort optional helpers (`xbbg`, `polars-bloomberg`, `polars`)
+- Persists `BLOOMBERG_PYTHON` and `BLOOMBERG_MCP_HOME` user environment variables
+- Writes a project `.mcp.json`
+- Updates Claude Desktop at `%APPDATA%\Claude\claude_desktop_config.json`
+- Registers Claude Code with `claude mcp add-json` when the Claude CLI is present
+- Updates Codex at `%USERPROFILE%\.codex\config.toml` or `$CODEX_HOME\config.toml`
+- Verifies Bloomberg Terminal/API connectivity with a bounded probe
+
+Restart Claude Desktop, Claude Code, or Codex after setup so the client reloads MCP configuration.
+
+### Manual setup
+
+#### 1. Clone the repo
 
 ```bash
 git clone https://github.com/sbctreasury/bloomberg-mcp.git
 ```
 
-### 2. Configure your MCP client
+#### 2. Configure your MCP client
 
 #### Option A: Bloomberg Terminal Python (recommended — no extra installs)
 
@@ -59,7 +84,7 @@ Or add to `.mcp.json`:
 }
 ```
 
-> **Note:** bqnt-3 already has `blpapi` and `pandas` installed. The launcher adds `fastmcp` and `pydantic` automatically. BQL queries use the bqnt-3 subprocess backend — no xbbg or polars-bloomberg needed.
+> **Note:** bqnt-3 already has `bql`, `blpapi`, and `pandas` installed. The launcher adds `fastmcp`, `pydantic`, and `psutil` automatically. BQL queries use the bqnt-3 subprocess backend, so xbbg and polars-bloomberg are helpful but not required for BQL.
 
 #### Option B: uv (full dependency management)
 
@@ -156,7 +181,7 @@ These rules are embedded in tool descriptions so any MCP client learns them auto
 bloomberg-mcp/
 ├── pyproject.toml             # uv project config (auto-installs deps)
 ├── server/
-│   ├── server.py              # FastMCP server (11 tools + resources)
+│   ├── server.py              # FastMCP server (12 tools + resources)
 │   ├── bloomberg_client.py    # Unified data access (3-tier BQL fallback)
 │   ├── bql_builder.py         # BQL validation + template builder
 │   ├── bql_subprocess.py      # bqnt-3 subprocess execution

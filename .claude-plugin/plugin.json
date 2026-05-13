@@ -1,0 +1,11 @@
+{
+  "name": "bloomberg-mcp",
+  "version": "1.0.0",
+  "description": "Bloomberg Terminal MCP server with auto-setup and BQL query skills. Provides 12 Bloomberg tools, BQL reference resources, status/reset helpers, and guided query generation.",
+  "author": {
+    "name": "SBC Treasury",
+    "email": "treasury@sbcounty.gov"
+  },
+  "license": "MIT",
+  "keywords": ["bloomberg", "mcp", "bql", "finance", "terminal"]
+}
