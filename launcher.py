@@ -1,9 +1,9 @@
-"""Bloomberg MCP Server launcher.
+"""Bloomberg MCP launcher.
 
 Works with any Python 3.11+ environment. On Bloomberg Terminal machines, the
 pre-installed bqnt-3 Python can run this launcher directly:
 
-    C:\\blp\\bqnt\\environments\\bqnt-3\\python.exe run_server.py
+    C:\\blp\\bqnt\\environments\\bqnt-3\\python.exe launcher.py
 
 The launcher checks for required packages and installs them automatically if
 missing. xbbg is required for MCP data tools; BQL also keeps a bqnt-3

@@ -118,13 +118,13 @@ function Install-Packages {
 function New-McpServerConfig {
     param(
         [string]$Python,
-        [string]$RunServer,
+        [string]$Launcher,
         [string]$RepoRoot
     )
 
     return [ordered]@{
         command = (Convert-ToForwardSlash $Python)
-        args = @((Convert-ToForwardSlash $RunServer))
+        args = @((Convert-ToForwardSlash $Launcher))
         env = [ordered]@{
             BLOOMBERG_PYTHON = (Convert-ToForwardSlash $Python)
             BLOOMBERG_MCP_HOME = (Convert-ToForwardSlash $RepoRoot)
@@ -277,9 +277,9 @@ raise SystemExit(0 if status.get('api_connected') else 2)
 }
 
 $repoRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot "..")).Path
-$runServer = Join-Path $repoRoot "run_server.py"
-if (-not (Test-Path -LiteralPath $runServer)) {
-    throw "run_server.py not found at $runServer"
+$launcher = Join-Path $repoRoot "launcher.py"
+if (-not (Test-Path -LiteralPath $launcher)) {
+    throw "launcher.py not found at $launcher"
 }
 
 Write-Step "Selecting Python"
@@ -301,7 +301,7 @@ if (-not $SkipEnvVars) {
     $env:BLOOMBERG_MCP_HOME = Convert-ToForwardSlash $repoRoot
 }
 
-$serverConfig = New-McpServerConfig $selectedPython $runServer $repoRoot
+$serverConfig = New-McpServerConfig $selectedPython $launcher $repoRoot
 
 if (-not $SkipProjectMcpJson) {
     Write-Step "Writing project .mcp.json"

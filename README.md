@@ -53,12 +53,12 @@ git clone https://github.com/sbctreasury/bloomberg-mcp.git
 
 #### Option A: Bloomberg Terminal Python (recommended — no extra installs)
 
-Every Bloomberg Terminal machine has Python pre-installed at `C:\blp\bqnt\environments\bqnt-3\python.exe`. The `run_server.py` launcher auto-installs missing packages (fastmcp, pydantic) on first run.
+Every Bloomberg Terminal machine has Python pre-installed at `C:\blp\bqnt\environments\bqnt-3\python.exe`. The `launcher.py` bootstrapper auto-installs missing packages on first run.
 
 **Claude Code:**
 
 ```bash
-claude mcp add bloomberg -- "C:/blp/bqnt/environments/bqnt-3/python.exe" "C:/path/to/bloomberg-mcp/run_server.py"
+claude mcp add bloomberg -- "C:/blp/bqnt/environments/bqnt-3/python.exe" "C:/path/to/bloomberg-mcp/launcher.py"
 ```
 
 Or add to `.mcp.json`:
@@ -68,7 +68,7 @@ Or add to `.mcp.json`:
   "mcpServers": {
     "bloomberg": {
       "command": "C:/blp/bqnt/environments/bqnt-3/python.exe",
-      "args": ["C:/path/to/bloomberg-mcp/run_server.py"]
+      "args": ["C:/path/to/bloomberg-mcp/launcher.py"]
     }
   }
 }
@@ -80,7 +80,7 @@ Or add to `.mcp.json`:
 {
   "bloomberg": {
     "command": "C:/blp/bqnt/environments/bqnt-3/python.exe",
-    "args": ["C:/path/to/bloomberg-mcp/run_server.py"]
+    "args": ["C:/path/to/bloomberg-mcp/launcher.py"]
   }
 }
 ```
@@ -92,7 +92,7 @@ Or add to `.mcp.json`:
 If you have [uv](https://docs.astral.sh/uv/) installed, it auto-installs all dependencies, including `xbbg`:
 
 ```bash
-claude mcp add bloomberg -- uv run --project /path/to/bloomberg-mcp python /path/to/bloomberg-mcp/server/server.py
+claude mcp add bloomberg -- uv run --project /path/to/bloomberg-mcp python /path/to/bloomberg-mcp/launcher.py
 ```
 
 Or add to `.mcp.json`:
@@ -102,7 +102,7 @@ Or add to `.mcp.json`:
   "mcpServers": {
     "bloomberg": {
       "command": "uv",
-      "args": ["run", "--project", "C:/path/to/bloomberg-mcp", "python", "C:/path/to/bloomberg-mcp/server/server.py"]
+      "args": ["run", "--project", "C:/path/to/bloomberg-mcp", "python", "C:/path/to/bloomberg-mcp/launcher.py"]
     }
   }
 }
@@ -123,7 +123,7 @@ Then configure with `python` directly:
 ```json
 {
   "command": "python",
-  "args": ["C:/path/to/bloomberg-mcp/server/server.py"]
+  "args": ["C:/path/to/bloomberg-mcp/launcher.py"]
 }
 ```
 
@@ -181,8 +181,9 @@ These rules are embedded in tool descriptions so any MCP client learns them auto
 ```
 bloomberg-mcp/
 ├── pyproject.toml             # uv project config (auto-installs deps)
+├── launcher.py                # Public MCP entrypoint / dependency bootstrapper
 ├── server/
-│   ├── server.py              # FastMCP server (12 tools + resources)
+│   ├── server.py              # Internal FastMCP implementation (12 tools + resources)
 │   ├── bloomberg_client.py    # Unified xbbg data access with BQL subprocess fallback
 │   ├── bql_builder.py         # BQL validation + template builder
 │   ├── bql_subprocess.py      # bqnt-3 subprocess execution

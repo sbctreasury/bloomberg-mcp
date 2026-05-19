@@ -10,8 +10,8 @@ Exposes 12 tools + MCP resources for BQL reference documentation.
 Any MCP client (Claude Code, Cursor, VS Code, custom agents) can use
 this server without a separate skill file — it's fully self-documenting.
 
-Run:
-    python server.py
+Run through the repository launcher:
+    python launcher.py
 """
 
 from __future__ import annotations
