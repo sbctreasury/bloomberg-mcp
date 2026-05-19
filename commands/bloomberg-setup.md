@@ -1,6 +1,6 @@
 ---
 name: bloomberg-setup
-description: Install and configure the Bloomberg MCP server for Claude Desktop, Claude Code, and Codex. Detects Bloomberg Python, installs dependencies, writes MCP configs, persists environment variables, and verifies connectivity.
+description: Install and configure the Bloomberg MCP server for Claude Desktop, Claude Code, and Codex. Finds or installs uv, syncs the project environment, writes MCP configs, persists environment variables, and verifies connectivity.
 ---
 
 # Bloomberg MCP Server Setup
@@ -19,9 +19,9 @@ powershell -ExecutionPolicy Bypass -File "${CLAUDE_PLUGIN_ROOT}\scripts\setup-bl
 
 ## What The Script Does
 
-1. Selects the best Python, preferring Bloomberg's built-in `C:\blp\bqnt\environments\bqnt-3\python.exe`.
-2. Installs required packages: `fastmcp`, `pydantic`, `psutil`, `pandas`, and `xbbg`.
-3. Uses Bloomberg's bundled bqnt-3 Python as the BQL subprocess fallback.
+1. Selects Bloomberg's built-in `C:\blp\bqnt\environments\bqnt-3\python.exe` for BQL fallback.
+2. Finds `uv`, or installs it for the current user if needed.
+3. Runs `uv sync` against the repo lockfile to create/update the project `.venv`.
 4. Persists user environment variables:
    - `BLOOMBERG_PYTHON`
    - `BLOOMBERG_MCP_HOME`
@@ -40,8 +40,11 @@ powershell -ExecutionPolicy Bypass -File .\scripts\setup-bloomberg-mcp.ps1 -Skip
 # Configure only Claude Desktop / Claude Code
 powershell -ExecutionPolicy Bypass -File .\scripts\setup-bloomberg-mcp.ps1 -SkipCodex
 
-# Use a specific Python
+# Use a specific Bloomberg fallback Python
 powershell -ExecutionPolicy Bypass -File .\scripts\setup-bloomberg-mcp.ps1 -PythonPath "C:\blp\bqnt\environments\bqnt-3\python.exe"
+
+# Use a specific uv executable
+powershell -ExecutionPolicy Bypass -File .\scripts\setup-bloomberg-mcp.ps1 -UvPath "$env:USERPROFILE\.local\bin\uv.exe"
 
 # Write configs without installing packages
 powershell -ExecutionPolicy Bypass -File .\scripts\setup-bloomberg-mcp.ps1 -SkipPackageInstall

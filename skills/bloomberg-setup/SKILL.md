@@ -31,9 +31,9 @@ powershell -ExecutionPolicy Bypass -File "${CLAUDE_PLUGIN_ROOT}\scripts\setup-bl
 
 ## What The Script Handles
 
-- Detects Bloomberg's built-in `bqnt-3` Python first.
-- Installs required packages: `fastmcp`, `pydantic`, `psutil`, `pandas`, `xbbg`.
-- Uses Bloomberg's bundled bqnt-3 Python as the BQL subprocess fallback.
+- Detects Bloomberg's built-in `bqnt-3` Python for BQL fallback.
+- Finds `uv`, or installs it for the current user if needed.
+- Runs `uv sync` against the repo lockfile to create/update the project `.venv`.
 - Persists `BLOOMBERG_PYTHON` and `BLOOMBERG_MCP_HOME`.
 - Writes project `.mcp.json`.
 - Updates Claude Desktop config at `%APPDATA%\Claude\claude_desktop_config.json`.
@@ -50,8 +50,11 @@ powershell -ExecutionPolicy Bypass -File .\scripts\setup-bloomberg-mcp.ps1 -Skip
 # Claude only
 powershell -ExecutionPolicy Bypass -File .\scripts\setup-bloomberg-mcp.ps1 -SkipCodex
 
-# Specific Python
+# Specific Bloomberg fallback Python
 powershell -ExecutionPolicy Bypass -File .\scripts\setup-bloomberg-mcp.ps1 -PythonPath "C:\blp\bqnt\environments\bqnt-3\python.exe"
+
+# Specific uv executable
+powershell -ExecutionPolicy Bypass -File .\scripts\setup-bloomberg-mcp.ps1 -UvPath "$env:USERPROFILE\.local\bin\uv.exe"
 
 # Config only
 powershell -ExecutionPolicy Bypass -File .\scripts\setup-bloomberg-mcp.ps1 -SkipPackageInstall
@@ -60,6 +63,6 @@ powershell -ExecutionPolicy Bypass -File .\scripts\setup-bloomberg-mcp.ps1 -Skip
 ## Troubleshooting
 
 - If no Bloomberg processes are found, ask the user to start Bloomberg Terminal with `wintrv`, log in, and retry.
-- If package install fails, rerun with `-SkipPackageInstall`; BQL fallback can still work through Bloomberg's bundled `bql` package, but BDP/BDH/BDIB need `xbbg`.
+- If `uv` install fails, install `uv` manually or pass `-UvPath`; BDP/BDH/BDIB need the project `.venv` synced with `xbbg`.
 - If Claude Desktop or Codex was open during setup, restart it so it reloads the MCP config.
 - If Codex already has a stale Bloomberg server entry, rerun the script. It replaces `[mcp_servers.bloomberg]` and `[mcp_servers.bloomberg.env]`.

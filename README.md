@@ -30,8 +30,9 @@ powershell -ExecutionPolicy Bypass -File .\scripts\setup-bloomberg-mcp.ps1
 
 The setup script:
 
-- Uses Bloomberg's built-in `C:\blp\bqnt\environments\bqnt-3\python.exe` when available
-- Installs required Python packages (`fastmcp`, `pydantic`, `psutil`, `pandas`, `xbbg`)
+- Finds or installs `uv` for the current Windows user
+- Runs `uv sync` against the repo lockfile to create/update the project `.venv`
+- Uses Bloomberg's built-in `C:\blp\bqnt\environments\bqnt-3\python.exe` only as the BQL fallback runtime
 - Persists `BLOOMBERG_PYTHON` and `BLOOMBERG_MCP_HOME` user environment variables
 - Writes a project `.mcp.json`
 - Updates Claude Desktop at `%APPDATA%\Claude\claude_desktop_config.json`
@@ -51,45 +52,17 @@ git clone https://github.com/sbctreasury/bloomberg-mcp.git
 
 #### 2. Configure your MCP client
 
-#### Option A: Bloomberg Terminal Python (recommended — no extra installs)
+#### Option A: Setup script (recommended)
 
-Every Bloomberg Terminal machine has Python pre-installed at `C:\blp\bqnt\environments\bqnt-3\python.exe`. The `launcher.py` bootstrapper auto-installs missing packages on first run.
+The setup script installs `uv` if needed, syncs the project environment, and writes MCP configs with resolved user-specific paths.
 
-**Claude Code:**
-
-```bash
-claude mcp add bloomberg -- "C:/blp/bqnt/environments/bqnt-3/python.exe" "C:/path/to/bloomberg-mcp/launcher.py"
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\setup-bloomberg-mcp.ps1
 ```
 
-Or add to `.mcp.json`:
+#### Option B: uv MCP config
 
-```json
-{
-  "mcpServers": {
-    "bloomberg": {
-      "command": "C:/blp/bqnt/environments/bqnt-3/python.exe",
-      "args": ["C:/path/to/bloomberg-mcp/launcher.py"]
-    }
-  }
-}
-```
-
-**Cursor / VS Code / LM Studio:**
-
-```json
-{
-  "bloomberg": {
-    "command": "C:/blp/bqnt/environments/bqnt-3/python.exe",
-    "args": ["C:/path/to/bloomberg-mcp/launcher.py"]
-  }
-}
-```
-
-> **Note:** bqnt-3 already has `bql`, `blpapi`, and `pandas` installed. The launcher adds the MCP runtime packages and `xbbg` automatically. BDP, BDH, BDIB, and the primary BQL path use `xbbg`; BQL can fall back to bqnt-3 subprocess execution.
-
-#### Option B: uv (full dependency management)
-
-If you have [uv](https://docs.astral.sh/uv/) installed, it auto-installs all dependencies, including `xbbg`:
+Use this shape if writing a config manually:
 
 ```bash
 claude mcp add bloomberg -- uv run --project /path/to/bloomberg-mcp python /path/to/bloomberg-mcp/launcher.py
@@ -102,13 +75,34 @@ Or add to `.mcp.json`:
   "mcpServers": {
     "bloomberg": {
       "command": "uv",
-      "args": ["run", "--project", "C:/path/to/bloomberg-mcp", "python", "C:/path/to/bloomberg-mcp/launcher.py"]
+      "args": ["run", "--project", "C:/path/to/bloomberg-mcp", "python", "C:/path/to/bloomberg-mcp/launcher.py"],
+      "env": {
+        "BLOOMBERG_PYTHON": "C:/blp/bqnt/environments/bqnt-3/python.exe",
+        "BLOOMBERG_MCP_HOME": "C:/path/to/bloomberg-mcp",
+        "PYTHONUTF8": "1"
+      }
     }
   }
 }
 ```
 
-> **Tip:** Find your `uv` path with `where uv` (Windows) or `which uv` (Mac/Linux).
+**Cursor / VS Code / LM Studio JSON shape:**
+
+```json
+{
+  "bloomberg": {
+    "command": "uv",
+    "args": ["run", "--project", "C:/path/to/bloomberg-mcp", "python", "C:/path/to/bloomberg-mcp/launcher.py"],
+    "env": {
+      "BLOOMBERG_PYTHON": "C:/blp/bqnt/environments/bqnt-3/python.exe",
+      "BLOOMBERG_MCP_HOME": "C:/path/to/bloomberg-mcp",
+      "PYTHONUTF8": "1"
+    }
+  }
+}
+```
+
+> **Tip:** The setup script resolves the full `uv.exe` path automatically. If writing config by hand, find it with `where uv`.
 
 #### Option C: Manual install
 

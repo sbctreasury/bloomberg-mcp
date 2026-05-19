@@ -3,6 +3,7 @@ param(
     [string]$PythonPath,
     [string]$ServerName = "bloomberg",
     [int]$ProbeTimeoutSec = 20,
+    [string]$UvPath,
     [switch]$SkipPackageInstall,
     [switch]$SkipEnvVars,
     [switch]$SkipClaudeDesktop,
@@ -45,15 +46,6 @@ function Invoke-CommandChecked {
     return $exitCode
 }
 
-function Test-PythonPackage {
-    param(
-        [string]$Python,
-        [string]$Package
-    )
-    & $Python -c "import $Package" *> $null
-    return $LASTEXITCODE -eq 0
-}
-
 function Get-BloombergPython {
     param([string]$RepoRoot)
 
@@ -86,6 +78,28 @@ function Get-BloombergPython {
     throw "No Python executable found. Install Python 3.11+ or Bloomberg Terminal, then retry."
 }
 
+function Get-BootstrapPython {
+    $pyLauncher = Get-Command py -ErrorAction SilentlyContinue
+    if ($pyLauncher) {
+        $candidate = & $pyLauncher.Source -3 -c "import sys; print(sys.executable)" 2>$null
+        if ($LASTEXITCODE -eq 0 -and $candidate) {
+            return [string]$candidate
+        }
+    }
+
+    $pythonCmd = Get-Command python -ErrorAction SilentlyContinue
+    if ($pythonCmd) {
+        return $pythonCmd.Source
+    }
+
+    $bqnt = "C:\blp\bqnt\environments\bqnt-3\python.exe"
+    if (Test-Path -LiteralPath $bqnt) {
+        return $bqnt
+    }
+
+    throw "No Python executable found to install uv. Install Python 3.11+ or install uv manually, then retry."
+}
+
 function Ensure-Pip {
     param([string]$Python)
 
@@ -95,38 +109,89 @@ function Ensure-Pip {
     }
 
     Write-Host "pip not found for $Python; trying ensurepip..."
-    Invoke-CommandChecked $Python @("-m", "ensurepip", "--upgrade")
+    [void](Invoke-CommandChecked $Python @("-m", "ensurepip", "--upgrade"))
 }
 
-function Install-Packages {
-    param([string]$Python)
+function Find-Uv {
+    if ($UvPath) {
+        if (-not (Test-Path -LiteralPath $UvPath)) {
+            throw "UvPath was provided but does not exist: $UvPath"
+        }
+        return (Resolve-Path -LiteralPath $UvPath).Path
+    }
 
-    Ensure-Pip $Python
+    $uvCmd = Get-Command uv -ErrorAction SilentlyContinue
+    if ($uvCmd) {
+        return $uvCmd.Source
+    }
 
-    $corePackages = @(
-        "fastmcp>=2.0.0",
-        "pydantic>=2.0.0",
-        "psutil>=5.9.0",
-        "pandas>=2.0.0",
-        "xbbg>=0.12.2,<2.0.0"
+    $known = @(
+        (Join-Path $env:USERPROFILE ".local\bin\uv.exe"),
+        (Join-Path $env:APPDATA "Python\Python313\Scripts\uv.exe"),
+        (Join-Path $env:APPDATA "Python\Python312\Scripts\uv.exe"),
+        (Join-Path $env:APPDATA "Python\Python311\Scripts\uv.exe")
+    )
+    foreach ($candidate in $known) {
+        if (Test-Path -LiteralPath $candidate) {
+            return (Resolve-Path -LiteralPath $candidate).Path
+        }
+    }
+
+    return $null
+}
+
+function Ensure-Uv {
+    $uv = Find-Uv
+    if ($uv) {
+        return $uv
+    }
+
+    if ($SkipPackageInstall) {
+        throw "uv was not found and -SkipPackageInstall was specified. Install uv or provide -UvPath."
+    }
+
+    Write-Step "Installing uv for the current user"
+    $bootstrapPython = Get-BootstrapPython
+    Write-Host "Bootstrap Python: $bootstrapPython"
+    Ensure-Pip $bootstrapPython
+    [void](Invoke-CommandChecked $bootstrapPython @("-m", "pip", "install", "--user", "--upgrade", "uv"))
+
+    $uv = Find-Uv
+    if (-not $uv) {
+        throw "uv installed but uv.exe was not found. Add the Python user Scripts directory to PATH or provide -UvPath."
+    }
+    return $uv
+}
+
+function Sync-ProjectEnvironment {
+    param(
+        [string]$Uv,
+        [string]$RepoRoot
     )
 
-    Write-Step "Installing required Python packages"
-    Invoke-CommandChecked $Python (@("-m", "pip", "install", "--upgrade", "--quiet") + $corePackages)
+    Write-Step "Syncing project environment with uv"
+    [void](Invoke-CommandChecked $Uv @("sync", "--project", $RepoRoot))
 }
 
 function New-McpServerConfig {
     param(
-        [string]$Python,
+        [string]$Uv,
         [string]$Launcher,
-        [string]$RepoRoot
+        [string]$RepoRoot,
+        [string]$BloombergPython
     )
 
     return [ordered]@{
-        command = (Convert-ToForwardSlash $Python)
-        args = @((Convert-ToForwardSlash $Launcher))
+        command = (Convert-ToForwardSlash $Uv)
+        args = @(
+            "run",
+            "--project",
+            (Convert-ToForwardSlash $RepoRoot),
+            "python",
+            (Convert-ToForwardSlash $Launcher)
+        )
         env = [ordered]@{
-            BLOOMBERG_PYTHON = (Convert-ToForwardSlash $Python)
+            BLOOMBERG_PYTHON = (Convert-ToForwardSlash $BloombergPython)
             BLOOMBERG_MCP_HOME = (Convert-ToForwardSlash $RepoRoot)
             PYTHONUTF8 = "1"
         }
@@ -250,7 +315,7 @@ function Register-ClaudeCode {
 
 function Test-BloombergConnection {
     param(
-        [string]$Python,
+        [string]$Uv,
         [string]$RepoRoot,
         [int]$TimeoutSec
     )
@@ -266,7 +331,7 @@ print(json.dumps(status))
 raise SystemExit(0 if status.get('api_connected') else 2)
 "@
 
-    $output = & $Python -c $probeScript 2>&1
+    $output = & $Uv run --project $RepoRoot python -c $probeScript 2>&1
     $exitCode = $LASTEXITCODE
     if ($output) {
         foreach ($line in $output) {
@@ -282,26 +347,30 @@ if (-not (Test-Path -LiteralPath $launcher)) {
     throw "launcher.py not found at $launcher"
 }
 
-Write-Step "Selecting Python"
-$selectedPython = Get-BloombergPython $repoRoot
-Write-Host "Python: $selectedPython"
+Write-Step "Selecting Bloomberg Python for BQL fallback"
+$bloombergPython = Get-BloombergPython $repoRoot
+Write-Host "Bloomberg Python: $bloombergPython"
 
-$version = & $selectedPython -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}')"
-Write-Host "Python version: $version"
+$version = & $bloombergPython -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}')"
+Write-Host "Bloomberg Python version: $version"
+
+Write-Step "Selecting uv runtime"
+$uv = Ensure-Uv
+Write-Host "uv: $uv"
 
 if (-not $SkipPackageInstall) {
-    Install-Packages $selectedPython
+    Sync-ProjectEnvironment $uv $repoRoot
 }
 
 if (-not $SkipEnvVars) {
     Write-Step "Persisting user environment variables"
-    [Environment]::SetEnvironmentVariable("BLOOMBERG_PYTHON", (Convert-ToForwardSlash $selectedPython), "User")
+    [Environment]::SetEnvironmentVariable("BLOOMBERG_PYTHON", (Convert-ToForwardSlash $bloombergPython), "User")
     [Environment]::SetEnvironmentVariable("BLOOMBERG_MCP_HOME", (Convert-ToForwardSlash $repoRoot), "User")
-    $env:BLOOMBERG_PYTHON = Convert-ToForwardSlash $selectedPython
+    $env:BLOOMBERG_PYTHON = Convert-ToForwardSlash $bloombergPython
     $env:BLOOMBERG_MCP_HOME = Convert-ToForwardSlash $repoRoot
 }
 
-$serverConfig = New-McpServerConfig $selectedPython $launcher $repoRoot
+$serverConfig = New-McpServerConfig $uv $launcher $repoRoot $bloombergPython
 
 if (-not $SkipProjectMcpJson) {
     Write-Step "Writing project .mcp.json"
@@ -339,7 +408,7 @@ if (-not $SkipConnectionTest) {
     }
 
     Write-Step "Testing Bloomberg API connection"
-    $connected = Test-BloombergConnection $selectedPython $repoRoot $ProbeTimeoutSec
+    $connected = Test-BloombergConnection $uv $repoRoot $ProbeTimeoutSec
     if ($connected) {
         Write-Host "Bloomberg API connected."
     } else {
