@@ -106,22 +106,13 @@ function Install-Packages {
     $corePackages = @(
         "fastmcp>=2.0.0",
         "pydantic>=2.0.0",
-        "psutil>=5.9.0"
-    )
-    $optionalPackages = @(
-        "xbbg>=0.11.0",
-        "polars-bloomberg>=0.5.0",
-        "polars>=1.0.0"
+        "psutil>=5.9.0",
+        "pandas>=2.0.0",
+        "xbbg>=0.12.2,<2.0.0"
     )
 
     Write-Step "Installing required Python packages"
     Invoke-CommandChecked $Python (@("-m", "pip", "install", "--upgrade", "--quiet") + $corePackages)
-
-    Write-Step "Installing optional Bloomberg helper packages"
-    $optionalExit = Invoke-CommandChecked $Python (@("-m", "pip", "install", "--upgrade", "--quiet") + $optionalPackages) -AllowFailure
-    if ($optionalExit -ne 0) {
-        Write-Warning "Optional xbbg/polars packages failed to install. BQL still works through Bloomberg bqnt-3 if Bloomberg Terminal is installed."
-    }
 }
 
 function New-McpServerConfig {

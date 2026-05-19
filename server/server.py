@@ -1,10 +1,10 @@
 """
 Bloomberg MCP Server — unified, self-documenting FastMCP implementation.
 
-Merges three Bloomberg data access approaches into one MCP server:
-- xbbg (BDP/BDH/BDIB/BQL via pandas)
-- polars-bloomberg (BQL via Polars)
-- bqnt-3 subprocess (zero-dependency BQL fallback)
+Uses xbbg as the single in-process Bloomberg backend for BDP, BDH, BDIB,
+BQL, bond analytics, screening, and field search. BQL keeps a bqnt-3
+subprocess fallback for resilience when the in-process Bloomberg session is
+unhealthy.
 
 Exposes 12 tools + MCP resources for BQL reference documentation.
 Any MCP client (Claude Code, Cursor, VS Code, custom agents) can use
@@ -17,7 +17,6 @@ Run:
 from __future__ import annotations
 
 import asyncio
-import importlib.util
 import logging
 import sys
 import threading
@@ -204,7 +203,7 @@ async def lifespan(server: FastMCP):
 mcp = FastMCP(
     "Bloomberg",
     instructions=(
-        "Bloomberg Terminal data access — BDP, BDH, BDIB, BQL queries, "
+        "Bloomberg Terminal data access via xbbg: BDP, BDH, BDIB, BQL queries, "
         "bond analytics, screening, field search, and comprehensive "
         "BQL reference documentation. "
         "For charting: write a Python script using matplotlib/plotly to "
@@ -277,14 +276,6 @@ def _error_response(error: str, error_type: str = "error", suggestion: str | Non
 
 def _get_client(ctx: Context) -> BloombergClient:
     return ctx.lifespan_context["bloomberg"]
-
-
-def _module_available(module_name: str) -> bool:
-    """Return True if a module can be imported without importing it now."""
-    try:
-        return importlib.util.find_spec(module_name) is not None
-    except (ImportError, ValueError):
-        return False
 
 
 # ======================================================================
@@ -367,8 +358,8 @@ class FieldSearchInput(BaseModel):
 async def bloomberg_status(deep_check: bool = False, probe_timeout: float = 10.0, ctx: Context = None) -> dict[str, Any]:
     """Check Bloomberg Terminal connectivity and API status.
 
-    Returns process list, terminal_running flag, api_connected flag,
-    available BQL execution backends, and circuit-breaker state.
+    Returns process list, terminal_running flag, api_connected flag, xbbg
+    backend state, BQL fallback availability, and circuit-breaker state.
 
     By default this is a FAST process-only check (sub-second, never hangs).
     Pass ``deep_check=True`` to also issue a bounded API probe against
@@ -405,20 +396,11 @@ async def bloomberg_status(deep_check: bool = False, probe_timeout: float = 10.0
     if isinstance(status, dict) and "error" in status and "type" in status:
         return status
 
-    # Also report BQL backend availability and breaker state.
-    from bql_subprocess import is_available as bqnt3_available
-    backends = []
-    if _module_available("polars_bloomberg"):
-        backends.append("polars-bloomberg")
-    if _module_available("xbbg"):
-        backends.append("xbbg")
-    if bqnt3_available():
-        backends.append("bqnt-3-subprocess")
-    status["bql_backends"] = backends
-
     if ctx is not None:
         try:
-            status["breaker"] = _get_client(ctx).breaker_state()
+            client = _get_client(ctx)
+            status["backend"] = client.backend_state()
+            status["breaker"] = client.breaker_state()
         except Exception:
             pass
 
@@ -853,8 +835,8 @@ async def bloomberg_reset(ctx: Context = None) -> dict[str, Any]:
       pick up the new session without restarting the server itself
     - The circuit breaker is open and you want to force a probe
 
-    After reset, the next data call will lazily re-import xbbg /
-    polars-bloomberg and establish a fresh session.
+    After reset, the next data call will lazily re-import xbbg and establish
+    a fresh session.
     """
     if ctx is None:
         return _error_response("Context unavailable", "internal_error")

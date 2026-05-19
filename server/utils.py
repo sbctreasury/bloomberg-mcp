@@ -56,7 +56,7 @@ import sys
 try:
     from xbbg import blp
 
-    df = blp.bdp("IBM US Equity", "PX_LAST")
+    df = blp.bdp("IBM US Equity", "PX_LAST", backend="pandas", format="wide")
     ok = df is not None and not df.empty
     print(json.dumps({"ok": bool(ok), "error": None if ok else "BDP returned empty"}))
     sys.exit(0 if ok else 2)
@@ -170,7 +170,7 @@ def cusip_to_ticker(cusip: str) -> str:
     """Convert a CUSIP identifier to a Bloomberg ticker via BDP."""
     from xbbg import blp
 
-    df = blp.bdp(f"/cusip/{cusip}", "PARSEKYABLE_DES")
+    df = blp.bdp(f"/cusip/{cusip}", "PARSEKYABLE_DES", backend="pandas", format="wide")
     if df is not None and not df.empty:
         return str(df.iloc[0, 0])
     return f"/cusip/{cusip}"
@@ -180,7 +180,7 @@ def isin_to_ticker(isin: str) -> str:
     """Convert an ISIN identifier to a Bloomberg ticker via BDP."""
     from xbbg import blp
 
-    df = blp.bdp(f"/isin/{isin}", "PARSEKYABLE_DES")
+    df = blp.bdp(f"/isin/{isin}", "PARSEKYABLE_DES", backend="pandas", format="wide")
     if df is not None and not df.empty:
         return str(df.iloc[0, 0])
     return f"/isin/{isin}"
@@ -254,7 +254,10 @@ def search_fields(query: str, max_results: int = 20) -> list[dict[str, str]]:
     """Search Bloomberg field mnemonics via ``blp.fieldSearch``."""
     from xbbg import blp
 
-    df = blp.fieldSearch(query)
+    if hasattr(blp, "bfld"):
+        df = blp.bfld(search_spec=query, backend="pandas")
+    else:
+        df = blp.fieldSearch(query, backend="pandas", format="wide")
     if df is None or df.empty:
         return []
 

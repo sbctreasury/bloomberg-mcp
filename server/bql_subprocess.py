@@ -1,6 +1,6 @@
 """BQL execution via Bloomberg bqnt-3 subprocess.
 
-Fallback execution path when xbbg/polars-bloomberg are not installed.
+Fallback execution path when xbbg BQL is unavailable or unhealthy.
 Spawns Bloomberg's bundled Python interpreter to run BQL queries.
 Works on every Bloomberg terminal with zero additional dependencies.
 """

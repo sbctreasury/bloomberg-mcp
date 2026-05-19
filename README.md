@@ -7,7 +7,8 @@ A self-documenting [Model Context Protocol](https://modelcontextprotocol.io/) se
 - **12 tools** — status/reset, BDP, BDH, BDIB, BQL, bond analytics, screening, field search, reference docs, examples
 - **17 BQL reference files** — comprehensive syntax documentation served as MCP resources
 - **27 verified test queries** — covering equity, fixed income, credit, CDS, returns, curves, and funds
-- **3-tier BQL execution** — polars-bloomberg → xbbg → bqnt-3 subprocess (automatic fallback)
+- **xbbg-first execution** - BDP, BDH, BDIB, BQL, screening, field search, and bond analytics use xbbg with stable pandas/wide output
+- **BQL fallback** - bqnt-3 subprocess remains available when an in-process BQL session is unhealthy
 - **Self-documenting** — BQL syntax rules embedded in tool descriptions; no external skill file needed
 
 ## Prerequisites
@@ -30,7 +31,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\setup-bloomberg-mcp.ps1
 The setup script:
 
 - Uses Bloomberg's built-in `C:\blp\bqnt\environments\bqnt-3\python.exe` when available
-- Installs required Python packages (`fastmcp`, `pydantic`, `psutil`) and best-effort optional helpers (`xbbg`, `polars-bloomberg`, `polars`)
+- Installs required Python packages (`fastmcp`, `pydantic`, `psutil`, `pandas`, `xbbg`)
 - Persists `BLOOMBERG_PYTHON` and `BLOOMBERG_MCP_HOME` user environment variables
 - Writes a project `.mcp.json`
 - Updates Claude Desktop at `%APPDATA%\Claude\claude_desktop_config.json`
@@ -84,11 +85,11 @@ Or add to `.mcp.json`:
 }
 ```
 
-> **Note:** bqnt-3 already has `bql`, `blpapi`, and `pandas` installed. The launcher adds `fastmcp`, `pydantic`, and `psutil` automatically. BQL queries use the bqnt-3 subprocess backend, so xbbg and polars-bloomberg are helpful but not required for BQL.
+> **Note:** bqnt-3 already has `bql`, `blpapi`, and `pandas` installed. The launcher adds the MCP runtime packages and `xbbg` automatically. BDP, BDH, BDIB, and the primary BQL path use `xbbg`; BQL can fall back to bqnt-3 subprocess execution.
 
 #### Option B: uv (full dependency management)
 
-If you have [uv](https://docs.astral.sh/uv/) installed, it auto-installs all dependencies (including the optional xbbg and polars-bloomberg for faster BQL execution):
+If you have [uv](https://docs.astral.sh/uv/) installed, it auto-installs all dependencies, including `xbbg`:
 
 ```bash
 claude mcp add bloomberg -- uv run --project /path/to/bloomberg-mcp python /path/to/bloomberg-mcp/server/server.py
@@ -130,7 +131,7 @@ Then configure with `python` directly:
 
 | Tool | Description |
 |------|-------------|
-| `bloomberg_status` | Check terminal connectivity and available BQL backends |
+| `bloomberg_status` | Check terminal connectivity, xbbg backend state, BQL fallback availability, and circuit breaker state |
 | `bloomberg_bdp` | Reference/snapshot data (current values) |
 | `bloomberg_bdh` | Historical time series |
 | `bloomberg_bdib` | Intraday bar data |
@@ -182,7 +183,7 @@ bloomberg-mcp/
 ├── pyproject.toml             # uv project config (auto-installs deps)
 ├── server/
 │   ├── server.py              # FastMCP server (12 tools + resources)
-│   ├── bloomberg_client.py    # Unified data access (3-tier BQL fallback)
+│   ├── bloomberg_client.py    # Unified xbbg data access with BQL subprocess fallback
 │   ├── bql_builder.py         # BQL validation + template builder
 │   ├── bql_subprocess.py      # bqnt-3 subprocess execution
 │   ├── utils.py               # Helpers (status check, serialization)

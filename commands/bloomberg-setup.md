@@ -20,8 +20,8 @@ powershell -ExecutionPolicy Bypass -File "${CLAUDE_PLUGIN_ROOT}\scripts\setup-bl
 ## What The Script Does
 
 1. Selects the best Python, preferring Bloomberg's built-in `C:\blp\bqnt\environments\bqnt-3\python.exe`.
-2. Installs required packages: `fastmcp`, `pydantic`, and `psutil`.
-3. Tries to install optional helper packages: `xbbg`, `polars-bloomberg`, and `polars`.
+2. Installs required packages: `fastmcp`, `pydantic`, `psutil`, `pandas`, and `xbbg`.
+3. Uses Bloomberg's bundled bqnt-3 Python as the BQL subprocess fallback.
 4. Persists user environment variables:
    - `BLOOMBERG_PYTHON`
    - `BLOOMBERG_MCP_HOME`
