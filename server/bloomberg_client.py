@@ -144,6 +144,21 @@ class BloombergClient:
             "bqnt3_available": bqnt3_available(),
         }
 
+    def warmup(self) -> dict[str, Any]:
+        """Prime the xbbg data path with a small BDP call.
+
+        The separate status probe can prove that Bloomberg is reachable through
+        bqnt-3, but BDP/BDH/BDIB use xbbg. Running a tiny xbbg query here keeps
+        the first user-facing quote request from paying lazy import/session
+        startup cost.
+        """
+        result = self.bdp(["IBM US Equity"], ["PX_LAST"])
+        return {
+            "ready": True,
+            "backend": "xbbg",
+            "probe": result,
+        }
+
     # ------------------------------------------------------------------
     # Lazy xbbg import
     # ------------------------------------------------------------------

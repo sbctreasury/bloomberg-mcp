@@ -125,7 +125,7 @@ Then configure with `python` directly:
 
 | Tool | Description |
 |------|-------------|
-| `bloomberg_status` | Check terminal connectivity, xbbg backend state, BQL fallback availability, and circuit breaker state |
+| `bloomberg_status` | Check terminal connectivity, warm the xbbg data backend, report BQL fallback availability, and show circuit-breaker state |
 | `bloomberg_bdp` | Reference/snapshot data (current values) |
 | `bloomberg_bdh` | Historical time series |
 | `bloomberg_bdib` | Intraday bar data |

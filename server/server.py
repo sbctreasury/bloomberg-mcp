@@ -355,16 +355,20 @@ class FieldSearchInput(BaseModel):
 # ======================================================================
 
 @mcp.tool()
-async def bloomberg_status(deep_check: bool = False, probe_timeout: float = 10.0, ctx: Context = None) -> dict[str, Any]:
+async def bloomberg_status(
+    deep_check: bool = True,
+    probe_timeout: float = 20.0,
+    warm_xbbg: bool = True,
+    ctx: Context = None,
+) -> dict[str, Any]:
     """Check Bloomberg Terminal connectivity and API status.
 
     Returns process list, terminal_running flag, api_connected flag, xbbg
     backend state, BQL fallback availability, and circuit-breaker state.
 
-    By default this is a FAST process-only check (sub-second, never hangs).
-    Pass ``deep_check=True`` to also issue a bounded API probe against
-    IBM PX_LAST with ``probe_timeout`` seconds (default 10s) to confirm the
-    session is alive.
+    By default this runs a bounded API probe and warms the xbbg data backend
+    with a tiny IBM PX_LAST BDP call. Pass ``deep_check=False`` and
+    ``warm_xbbg=False`` for a fast process-only check.
     """
     try:
         probe_timeout = float(probe_timeout)
@@ -401,6 +405,21 @@ async def bloomberg_status(deep_check: bool = False, probe_timeout: float = 10.0
             client = _get_client(ctx)
             status["backend"] = client.backend_state()
             status["breaker"] = client.breaker_state()
+
+            if warm_xbbg and status.get("terminal_running"):
+                warmup = await _run_bounded(
+                    client.warmup,
+                    timeout=probe_timeout,
+                    label="bloomberg_xbbg_warmup",
+                    on_timeout=lambda: client.record_timeout("bloomberg_xbbg_warmup"),
+                )
+                if isinstance(warmup, dict) and "error" in warmup and "type" in warmup:
+                    status["data_backend_ready"] = False
+                    status["data_backend_error"] = warmup
+                else:
+                    status["data_backend_ready"] = True
+                    status["data_backend_probe"] = warmup
+                status["breaker"] = client.breaker_state()
         except Exception:
             pass
 

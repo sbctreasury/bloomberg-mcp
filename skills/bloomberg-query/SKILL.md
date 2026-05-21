@@ -15,7 +15,7 @@ You have access to 12 Bloomberg MCP tools. This skill teaches you how to use the
 
 | Tool | Purpose | Requires Terminal |
 |------|---------|-------------------|
-| `bloomberg_status` | Check connectivity | Yes |
+| `bloomberg_status` | Check connectivity and warm xbbg | Yes |
 | `bloomberg_bdp` | Reference/snapshot data (current values) | Yes |
 | `bloomberg_bdh` | Historical time series | Yes |
 | `bloomberg_bdib` | Intraday bar data (OHLCV) | Yes |
@@ -273,7 +273,7 @@ This MCP server returns structured data. It does not expose a charting tool. Aft
 4. Local charting -> multipanel performance chart
 
 ### Always Check Connectivity First
-If any tool returns an error, run `bloomberg_status()` to diagnose. Common issues:
+If any tool returns an error, run `bloomberg_status()` to diagnose and warm the xbbg data path. Common issues:
 - Terminal not running → start Bloomberg Terminal
 - API not connected → restart Terminal, wait for full load
 - Missing entitlements → check Bloomberg subscription
