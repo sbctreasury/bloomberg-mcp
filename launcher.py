@@ -1,13 +1,9 @@
 """Bloomberg MCP launcher.
 
-Works with any Python 3.11+ environment. On Bloomberg Terminal machines, the
-pre-installed bqnt-3 Python can run this launcher directly:
-
-    C:\\blp\\bqnt\\environments\\bqnt-3\\python.exe launcher.py
-
-The launcher checks for required packages and installs them automatically if
-missing. xbbg is required for MCP data tools; BQL also keeps a bqnt-3
-subprocess fallback when Bloomberg's in-process session is unhealthy.
+Works with any Python 3.11+ environment that can reach a running Bloomberg
+Terminal. The launcher checks for required packages and installs them
+automatically if missing. xbbg provides all data tools (BDP/BDH/BDIB/BDS/
+BSRCH) and runs BQL in-process via blpapi — no separate BQNT environment.
 """
 
 from __future__ import annotations

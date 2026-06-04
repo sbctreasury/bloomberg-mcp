@@ -10,7 +10,6 @@ Utility helpers for the Bloomberg MCP server.
 
 from __future__ import annotations
 
-import importlib.util
 import json
 import logging
 import subprocess
@@ -65,24 +64,6 @@ except Exception as exc:
     sys.exit(1)
 """
 
-_BQL_PROBE_SCRIPT = r"""
-import json
-import sys
-
-try:
-    import bql
-
-    bq = bql.Service()
-    response = bq.execute("get(px_last) for(['IBM US Equity'])")
-    df = bql.combined_df(response)
-    ok = df is not None and not df.empty
-    print(json.dumps({"ok": bool(ok), "error": None if ok else "BQL probe returned empty"}))
-    sys.exit(0 if ok else 2)
-except Exception as exc:
-    print(json.dumps({"ok": False, "error": f"BQL probe failed: {exc}"}))
-    sys.exit(1)
-"""
-
 
 def _probe_bdp(timeout: float) -> dict[str, Any]:
     """Run a Bloomberg API probe in a child process with a hard timeout.
@@ -94,19 +75,6 @@ def _probe_bdp(timeout: float) -> dict[str, Any]:
     python_path = sys.executable
     script = _BDP_PROBE_SCRIPT
     backend = "BDP"
-
-    if importlib.util.find_spec("xbbg") is None:
-        try:
-            from bql_subprocess import _detect_bloomberg_python
-
-            bqnt_python = _detect_bloomberg_python()
-        except Exception:
-            bqnt_python = None
-
-        if bqnt_python:
-            python_path = bqnt_python
-            script = _BQL_PROBE_SCRIPT
-            backend = "BQL"
 
     try:
         result = subprocess.run(

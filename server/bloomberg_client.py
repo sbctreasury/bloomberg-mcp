@@ -1,9 +1,8 @@
 """Unified Bloomberg data access layer.
 
 Uses xbbg as the single in-process Bloomberg backend for BDP, BDH, BDIB, BQL,
-screening, field search, and bond analytics. BQL keeps one explicit fallback to
-Bloomberg's bqnt-3 Python subprocess because that path gives us a process
-boundary for long-running or wedged BQL calls.
+BDS, BSRCH, screening, field search, and bond analytics. xbbg (>=0.12.2) runs
+BQL in-process via blpapi, so no separate BQNT environment is required.
 
 All methods return JSON-serializable dicts via ``utils.serialize_dataframe``.
 
@@ -133,24 +132,18 @@ class BloombergClient:
         except importlib.metadata.PackageNotFoundError:
             xbbg_version = None
 
-        from bql_subprocess import is_available as bqnt3_available
-
         return {
             "primary_backend": "xbbg",
             "xbbg_available": self._check_xbbg(),
             "xbbg_version": xbbg_version,
             "xbbg_options": dict(self.XBBG_KWARGS),
-            "bql_fallback_backend": "bqnt-3-subprocess" if bqnt3_available() else None,
-            "bqnt3_available": bqnt3_available(),
         }
 
     def warmup(self) -> dict[str, Any]:
         """Prime the xbbg data path with a small BDP call.
 
-        The separate status probe can prove that Bloomberg is reachable through
-        bqnt-3, but BDP/BDH/BDIB use xbbg. Running a tiny xbbg query here keeps
-        the first user-facing quote request from paying lazy import/session
-        startup cost.
+        Running a tiny xbbg query here keeps the first user-facing quote request
+        from paying the lazy import/session startup cost.
         """
         result = self.bdp(["IBM US Equity"], ["PX_LAST"])
         return {
@@ -273,26 +266,11 @@ class BloombergClient:
     # ------------------------------------------------------------------
 
     def bql(self, query: str, timeout: int = 60) -> dict[str, Any]:
-        """Execute BQL with xbbg first, bqnt-3 subprocess fallback second."""
+        """Execute a BQL query in-process via xbbg (blpapi BQL service)."""
 
         def _do():
-            if self._check_xbbg():
-                try:
-                    df = self.blp.bql(query, **self._xbbg_kwargs())
-                    return serialize_dataframe(df)
-                except ImportError:
-                    self._has_xbbg = False
-                except Exception as exc:
-                    logger.warning("xbbg BQL failed (%s), trying bqnt-3 subprocess", exc)
-
-            from bql_subprocess import execute_bql, is_available
-
-            if not is_available():
-                raise RuntimeError(
-                    "No BQL execution backend available. Install xbbg or ensure "
-                    "Bloomberg bqnt-3 Python is at the expected path."
-                )
-            return execute_bql(query, timeout=timeout)
+            df = self.blp.bql(query, **self._xbbg_kwargs())
+            return serialize_dataframe(df)
 
         return self._call(_do)
 

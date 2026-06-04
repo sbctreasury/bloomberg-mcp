@@ -2,9 +2,8 @@
 Bloomberg MCP Server — unified, self-documenting FastMCP implementation.
 
 Uses xbbg as the single in-process Bloomberg backend for BDP, BDH, BDIB,
-BQL, bond analytics, screening, and field search. BQL keeps a bqnt-3
-subprocess fallback for resilience when the in-process Bloomberg session is
-unhealthy.
+BQL, BDS, BSRCH, bond analytics, screening, and field search. xbbg runs BQL
+in-process via blpapi — no separate BQNT environment required.
 
 Exposes 12 tools + MCP resources for BQL reference documentation.
 Any MCP client (Claude Code, Cursor, VS Code, custom agents) can use
@@ -578,8 +577,7 @@ async def bloomberg_bql(query: str, validate_first: bool = True, timeout: int = 
             )
 
     client = _get_client(ctx)
-    # Give the outer wait_for a small grace period over the inner bqnt-3
-    # subprocess timeout (subprocess.run already adds +10s itself).
+    # Give the outer wait_for a small grace period over the BQL query timeout.
     return await _run_bounded(
         client.bql, inp.query, inp.timeout,
         timeout=inp.timeout + 15, label="bloomberg_bql",
