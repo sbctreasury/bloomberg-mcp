@@ -24,3 +24,6 @@ bonds.bql
 summarize.py
 test.bql
 bonds.csv
+
+# packaged artifacts
+*.zip
