@@ -2,7 +2,7 @@
   "mcpServers": {
     "bloomberg": {
       "command": "uv",
-      "args": ["run", "--project", "${CLAUDE_PLUGIN_ROOT}", "python", "${CLAUDE_PLUGIN_ROOT}/launcher.py"],
+      "args": ["run", "--no-sync", "--project", "${CLAUDE_PLUGIN_ROOT}", "python", "${CLAUDE_PLUGIN_ROOT}/launcher.py"],
       "env": {
         "BLOOMBERG_MCP_HOME": "${CLAUDE_PLUGIN_ROOT}",
         "PYTHONUTF8": "1"
