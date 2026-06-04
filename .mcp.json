@@ -4,7 +4,6 @@
       "command": "uv",
       "args": ["run", "--project", "${CLAUDE_PLUGIN_ROOT}", "python", "${CLAUDE_PLUGIN_ROOT}/launcher.py"],
       "env": {
-        "BLOOMBERG_PYTHON": "C:/blp/bqnt/environments/bqnt-3/python.exe",
         "BLOOMBERG_MCP_HOME": "${CLAUDE_PLUGIN_ROOT}",
         "PYTHONUTF8": "1"
       }
