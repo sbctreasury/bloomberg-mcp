@@ -31,13 +31,12 @@ powershell -ExecutionPolicy Bypass -File "${CLAUDE_PLUGIN_ROOT}\scripts\setup-bl
 
 ## What The Script Handles
 
-- Detects Bloomberg's built-in `bqnt-3` Python for BQL fallback.
 - Finds `uv`, or installs it for the current user if needed.
 - Runs `uv sync` against the repo lockfile to create/update the project `.venv`.
-- Persists `BLOOMBERG_PYTHON` and `BLOOMBERG_MCP_HOME`.
+- Persists `BLOOMBERG_MCP_HOME`.
 - Writes project `.mcp.json`.
 - Updates Claude Desktop config at `%APPDATA%\Claude\claude_desktop_config.json`.
-- Registers Claude Code with `claude mcp add-json` when available.
+- Registers Claude Code only when `-RegisterClaudeCode` is passed (it auto-discovers the plugin otherwise).
 - Updates Codex config at `%USERPROFILE%\.codex\config.toml` or `$CODEX_HOME\config.toml`.
 - Runs a bounded Bloomberg API probe.
 
@@ -45,13 +44,10 @@ powershell -ExecutionPolicy Bypass -File "${CLAUDE_PLUGIN_ROOT}\scripts\setup-bl
 
 ```powershell
 # Codex only
-powershell -ExecutionPolicy Bypass -File .\scripts\setup-bloomberg-mcp.ps1 -SkipClaudeDesktop -SkipClaudeCode
+powershell -ExecutionPolicy Bypass -File .\scripts\setup-bloomberg-mcp.ps1 -SkipClaudeDesktop
 
-# Claude only
+# Claude Desktop only
 powershell -ExecutionPolicy Bypass -File .\scripts\setup-bloomberg-mcp.ps1 -SkipCodex
-
-# Specific Bloomberg fallback Python
-powershell -ExecutionPolicy Bypass -File .\scripts\setup-bloomberg-mcp.ps1 -PythonPath "C:\blp\bqnt\environments\bqnt-3\python.exe"
 
 # Specific uv executable
 powershell -ExecutionPolicy Bypass -File .\scripts\setup-bloomberg-mcp.ps1 -UvPath "$env:USERPROFILE\.local\bin\uv.exe"

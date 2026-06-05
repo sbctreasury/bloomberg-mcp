@@ -27,16 +27,13 @@ powershell -ExecutionPolicy Bypass -File "${CLAUDE_PLUGIN_ROOT}\scripts\setup-bl
 
 ## What The Script Does
 
-1. Selects Bloomberg's built-in `C:\blp\bqnt\environments\bqnt-3\python.exe` for BQL fallback.
-2. Finds `uv`, or installs it for the current user if needed.
-3. Runs `uv sync` against the repo lockfile to create/update the project `.venv`.
-4. Persists user environment variables:
-   - `BLOOMBERG_PYTHON`
-   - `BLOOMBERG_MCP_HOME`
-5. Writes project `.mcp.json`.
-6. Updates Claude Desktop config at `%APPDATA%\Claude\claude_desktop_config.json`.
-7. Updates Codex config at `%USERPROFILE%\.codex\config.toml` or `$CODEX_HOME\config.toml`.
-8. Verifies Bloomberg Terminal/API connectivity with the server's bounded status probe.
+1. Finds `uv`, or installs it for the current user if needed.
+2. Runs `uv sync` against the repo lockfile to create/update the project `.venv`.
+3. Persists the `BLOOMBERG_MCP_HOME` user environment variable.
+4. Writes project `.mcp.json`.
+5. Updates Claude Desktop config at `%APPDATA%\Claude\claude_desktop_config.json`.
+6. Updates Codex config at `%USERPROFILE%\.codex\config.toml` or `$CODEX_HOME\config.toml`.
+7. Verifies Bloomberg Terminal/API connectivity with the server's bounded status probe.
 
 Claude Code is **not** registered by default — it auto-discovers the plugin.
 Pass `-RegisterClaudeCode` to register it explicitly (e.g. a direct clone).
@@ -52,9 +49,6 @@ powershell -ExecutionPolicy Bypass -File .\scripts\setup-bloomberg-mcp.ps1 -Skip
 
 # Also register with Claude Code (direct, non-marketplace clones)
 powershell -ExecutionPolicy Bypass -File .\scripts\setup-bloomberg-mcp.ps1 -RegisterClaudeCode
-
-# Use a specific Bloomberg fallback Python
-powershell -ExecutionPolicy Bypass -File .\scripts\setup-bloomberg-mcp.ps1 -PythonPath "C:\blp\bqnt\environments\bqnt-3\python.exe"
 
 # Use a specific uv executable
 powershell -ExecutionPolicy Bypass -File .\scripts\setup-bloomberg-mcp.ps1 -UvPath "$env:USERPROFILE\.local\bin\uv.exe"

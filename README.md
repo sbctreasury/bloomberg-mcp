@@ -8,13 +8,13 @@ A self-documenting [Model Context Protocol](https://modelcontextprotocol.io/) se
 - **17 BQL reference files** — comprehensive syntax documentation served as MCP resources
 - **27 verified test queries** — covering equity, fixed income, credit, CDS, returns, curves, and funds
 - **xbbg-first execution** - BDP, BDH, BDIB, BQL, screening, field search, and bond analytics use xbbg with stable pandas/wide output
-- **BQL fallback** - bqnt-3 subprocess remains available when an in-process BQL session is unhealthy
+- **In-process BQL** - BQL runs in-process via blpapi; no separate BQNT environment required
 - **Self-documenting** — BQL syntax rules embedded in tool descriptions; no external skill file needed
 
 ## Prerequisites
 
 - **Bloomberg Terminal** — must be running and logged in
-- **Python 3.11+** — Bloomberg's bqnt-3 Python works out of the box (see below)
+- **uv** — provisions the project's Python 3.11+ environment automatically; the setup script installs it if missing
 
 ## Installation
 
@@ -32,11 +32,10 @@ The setup script:
 
 - Finds or installs `uv` for the current Windows user
 - Runs `uv sync` against the repo lockfile to create/update the project `.venv`
-- Uses Bloomberg's built-in `C:\blp\bqnt\environments\bqnt-3\python.exe` only as the BQL fallback runtime
-- Persists `BLOOMBERG_PYTHON` and `BLOOMBERG_MCP_HOME` user environment variables
+- Persists the `BLOOMBERG_MCP_HOME` user environment variable
 - Writes a project `.mcp.json`
 - Updates Claude Desktop at `%APPDATA%\Claude\claude_desktop_config.json`
-- Registers Claude Code with `claude mcp add-json` when the Claude CLI is present
+- Optionally registers Claude Code with `-RegisterClaudeCode` (Claude Code auto-discovers the bundled plugin otherwise)
 - Updates Codex at `%USERPROFILE%\.codex\config.toml` or `$CODEX_HOME\config.toml`
 - Verifies Bloomberg Terminal/API connectivity with a bounded probe
 
@@ -77,7 +76,6 @@ Or add to `.mcp.json`:
       "command": "uv",
       "args": ["run", "--project", "C:/path/to/bloomberg-mcp", "python", "C:/path/to/bloomberg-mcp/launcher.py"],
       "env": {
-        "BLOOMBERG_PYTHON": "C:/blp/bqnt/environments/bqnt-3/python.exe",
         "BLOOMBERG_MCP_HOME": "C:/path/to/bloomberg-mcp",
         "PYTHONUTF8": "1"
       }
@@ -94,7 +92,6 @@ Or add to `.mcp.json`:
     "command": "uv",
     "args": ["run", "--project", "C:/path/to/bloomberg-mcp", "python", "C:/path/to/bloomberg-mcp/launcher.py"],
     "env": {
-      "BLOOMBERG_PYTHON": "C:/blp/bqnt/environments/bqnt-3/python.exe",
       "BLOOMBERG_MCP_HOME": "C:/path/to/bloomberg-mcp",
       "PYTHONUTF8": "1"
     }
@@ -125,7 +122,7 @@ Then configure with `python` directly:
 
 | Tool | Description |
 |------|-------------|
-| `bloomberg_status` | Check terminal connectivity, warm the xbbg data backend, report BQL fallback availability, and show circuit-breaker state |
+| `bloomberg_status` | Check terminal connectivity, warm the xbbg data backend, and show circuit-breaker state |
 | `bloomberg_bdp` | Reference/snapshot data (current values) |
 | `bloomberg_bdh` | Historical time series |
 | `bloomberg_bdib` | Intraday bar data |
@@ -178,9 +175,9 @@ bloomberg-mcp/
 ├── launcher.py                # Public MCP entrypoint / dependency bootstrapper
 ├── server/
 │   ├── server.py              # Internal FastMCP implementation (12 tools + resources)
-│   ├── bloomberg_client.py    # Unified xbbg data access with BQL subprocess fallback
+│   ├── bloomberg_client.py    # Unified xbbg data access (BQL in-process via blpapi)
 │   ├── bql_builder.py         # BQL validation + template builder
-│   ├── bql_subprocess.py      # bqnt-3 subprocess execution
+│   ├── chart_engine.py        # Chart rendering helpers
 │   ├── utils.py               # Helpers (status check, serialization)
 │   └── requirements.txt
 ├── references/                # 17 BQL reference files

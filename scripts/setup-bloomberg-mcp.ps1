@@ -1,6 +1,5 @@
 [CmdletBinding()]
 param(
-    [string]$PythonPath,
     [string]$ServerName = "bloomberg",
     [int]$ProbeTimeoutSec = 20,
     [string]$UvPath,
@@ -46,38 +45,6 @@ function Invoke-CommandChecked {
     return $exitCode
 }
 
-function Get-BloombergPython {
-    param([string]$RepoRoot)
-
-    if ($PythonPath) {
-        $candidate = (Resolve-Path -LiteralPath $PythonPath).Path
-        return $candidate
-    }
-
-    $bqnt = "C:\blp\bqnt\environments\bqnt-3\python.exe"
-    if (Test-Path -LiteralPath $bqnt) {
-        return $bqnt
-    }
-
-    $detector = Join-Path $RepoRoot "scripts\detect-python.py"
-    $pythonCmd = Get-Command python -ErrorAction SilentlyContinue
-    if ($pythonCmd -and (Test-Path -LiteralPath $detector)) {
-        $raw = & $pythonCmd.Source $detector
-        if ($LASTEXITCODE -eq 0 -and $raw) {
-            $detected = $raw | ConvertFrom-Json
-            if ($detected.python_path) {
-                return [string]$detected.python_path
-            }
-        }
-    }
-
-    if ($pythonCmd) {
-        return $pythonCmd.Source
-    }
-
-    throw "No Python executable found. Install Python 3.11+ or Bloomberg Terminal, then retry."
-}
-
 function Get-BootstrapPython {
     $pyLauncher = Get-Command py -ErrorAction SilentlyContinue
     if ($pyLauncher) {
@@ -90,11 +57,6 @@ function Get-BootstrapPython {
     $pythonCmd = Get-Command python -ErrorAction SilentlyContinue
     if ($pythonCmd) {
         return $pythonCmd.Source
-    }
-
-    $bqnt = "C:\blp\bqnt\environments\bqnt-3\python.exe"
-    if (Test-Path -LiteralPath $bqnt) {
-        return $bqnt
     }
 
     throw "No Python executable found to install uv. Install Python 3.11+ or install uv manually, then retry."
@@ -177,8 +139,7 @@ function New-McpServerConfig {
     param(
         [string]$Uv,
         [string]$Launcher,
-        [string]$RepoRoot,
-        [string]$BloombergPython
+        [string]$RepoRoot
     )
 
     return [ordered]@{
@@ -191,7 +152,6 @@ function New-McpServerConfig {
             (Convert-ToForwardSlash $Launcher)
         )
         env = [ordered]@{
-            BLOOMBERG_PYTHON = (Convert-ToForwardSlash $BloombergPython)
             BLOOMBERG_MCP_HOME = (Convert-ToForwardSlash $RepoRoot)
             PYTHONUTF8 = "1"
         }
@@ -364,13 +324,6 @@ if (-not (Test-Path -LiteralPath $launcher)) {
     throw "launcher.py not found at $launcher"
 }
 
-Write-Step "Selecting Bloomberg Python for BQL fallback"
-$bloombergPython = Get-BloombergPython $repoRoot
-Write-Host "Bloomberg Python: $bloombergPython"
-
-$version = & $bloombergPython -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}')"
-Write-Host "Bloomberg Python version: $version"
-
 Write-Step "Selecting uv runtime"
 $uv = Ensure-Uv
 Write-Host "uv: $uv"
@@ -381,13 +334,11 @@ if (-not $SkipPackageInstall) {
 
 if (-not $SkipEnvVars) {
     Write-Step "Persisting user environment variables"
-    [Environment]::SetEnvironmentVariable("BLOOMBERG_PYTHON", (Convert-ToForwardSlash $bloombergPython), "User")
     [Environment]::SetEnvironmentVariable("BLOOMBERG_MCP_HOME", (Convert-ToForwardSlash $repoRoot), "User")
-    $env:BLOOMBERG_PYTHON = Convert-ToForwardSlash $bloombergPython
     $env:BLOOMBERG_MCP_HOME = Convert-ToForwardSlash $repoRoot
 }
 
-$serverConfig = New-McpServerConfig $uv $launcher $repoRoot $bloombergPython
+$serverConfig = New-McpServerConfig $uv $launcher $repoRoot
 
 if (-not $SkipProjectMcpJson) {
     Write-Step "Writing project .mcp.json"
