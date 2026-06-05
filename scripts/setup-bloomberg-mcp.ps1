@@ -295,17 +295,34 @@ $($envLines -join "`n")
 function Register-ClaudeCode {
     param(
         [string]$Name,
-        [hashtable]$ServerConfig
+        $ServerConfig
     )
 
     $claude = Get-Command claude -ErrorAction SilentlyContinue
     if (-not $claude) {
-        Write-Warning "Claude Code CLI not found on PATH; skipped 'claude mcp add-json'."
+        Write-Warning "Claude Code CLI not found on PATH; skipped 'claude mcp add'."
         return $false
     }
 
-    $json = ($ServerConfig | ConvertTo-Json -Depth 20 -Compress)
-    & $claude.Source mcp add-json --scope user $Name $json
+    # Build the argument list explicitly instead of passing inline JSON.
+    # On Windows PowerShell the embedded double quotes in compressed JSON are
+    # mangled when handed to the native claude executable, which then rejects it
+    # with "Invalid configuration: : Invalid input". Using --env flags plus a
+    # "--" command separator avoids any quoting round-trip.
+    & $claude.Source mcp remove -s user $Name 2>$null | Out-Null
+
+    $cliArgs = @("mcp", "add", "--scope", "user", $Name)
+    foreach ($key in $ServerConfig.env.Keys) {
+        $cliArgs += "--env"
+        $cliArgs += ("{0}={1}" -f $key, $ServerConfig.env[$key])
+    }
+    $cliArgs += "--"
+    $cliArgs += [string]$ServerConfig.command
+    foreach ($arg in $ServerConfig.args) {
+        $cliArgs += [string]$arg
+    }
+
+    & $claude.Source @cliArgs
     if ($LASTEXITCODE -ne 0) {
         Write-Warning "Claude Code CLI registration failed; Claude Desktop and project configs may still be usable."
         return $false
