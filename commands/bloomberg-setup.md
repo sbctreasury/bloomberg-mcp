@@ -1,9 +1,17 @@
 ---
 name: bloomberg-setup
-description: Install and configure the Bloomberg MCP server for Claude Desktop, Claude Code, and Codex. Finds or installs uv, syncs the project environment, writes MCP configs, persists environment variables, and verifies connectivity.
+description: Install and configure the Bloomberg MCP server for Claude Desktop and Codex. Finds or installs uv, syncs the project environment, writes MCP configs, persists environment variables, and verifies connectivity. Claude Code auto-discovers the plugin and needs no setup.
 ---
 
 # Bloomberg MCP Server Setup
+
+> **Claude Code (marketplace install) needs no setup.** The plugin ships a
+> bundled `.mcp.json` that Claude Code auto-discovers, and the launcher
+> self-heals its environment with `uv sync` on first run. As long as `uv` is
+> installed and Bloomberg Terminal is running, it just works. Run this script to
+> configure **Claude Desktop / Codex** (which are not plugin-aware), to install
+> `uv` if it is missing, or — for a direct, non-marketplace clone — pass
+> `-RegisterClaudeCode` to register with Claude Code explicitly.
 
 Run this from the plugin or repository root:
 
@@ -27,18 +35,23 @@ powershell -ExecutionPolicy Bypass -File "${CLAUDE_PLUGIN_ROOT}\scripts\setup-bl
    - `BLOOMBERG_MCP_HOME`
 5. Writes project `.mcp.json`.
 6. Updates Claude Desktop config at `%APPDATA%\Claude\claude_desktop_config.json`.
-7. Registers Claude Code with `claude mcp add-json` when the Claude CLI is installed.
-8. Updates Codex config at `%USERPROFILE%\.codex\config.toml` or `$CODEX_HOME\config.toml`.
-9. Verifies Bloomberg Terminal/API connectivity with the server's bounded status probe.
+7. Updates Codex config at `%USERPROFILE%\.codex\config.toml` or `$CODEX_HOME\config.toml`.
+8. Verifies Bloomberg Terminal/API connectivity with the server's bounded status probe.
+
+Claude Code is **not** registered by default — it auto-discovers the plugin.
+Pass `-RegisterClaudeCode` to register it explicitly (e.g. a direct clone).
 
 ## Useful Flags
 
 ```powershell
 # Configure only Codex
-powershell -ExecutionPolicy Bypass -File .\scripts\setup-bloomberg-mcp.ps1 -SkipClaudeDesktop -SkipClaudeCode
+powershell -ExecutionPolicy Bypass -File .\scripts\setup-bloomberg-mcp.ps1 -SkipClaudeDesktop
 
-# Configure only Claude Desktop / Claude Code
+# Configure only Claude Desktop
 powershell -ExecutionPolicy Bypass -File .\scripts\setup-bloomberg-mcp.ps1 -SkipCodex
+
+# Also register with Claude Code (direct, non-marketplace clones)
+powershell -ExecutionPolicy Bypass -File .\scripts\setup-bloomberg-mcp.ps1 -RegisterClaudeCode
 
 # Use a specific Bloomberg fallback Python
 powershell -ExecutionPolicy Bypass -File .\scripts\setup-bloomberg-mcp.ps1 -PythonPath "C:\blp\bqnt\environments\bqnt-3\python.exe"

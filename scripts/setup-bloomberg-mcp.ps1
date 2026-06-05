@@ -7,7 +7,7 @@ param(
     [switch]$SkipPackageInstall,
     [switch]$SkipEnvVars,
     [switch]$SkipClaudeDesktop,
-    [switch]$SkipClaudeCode,
+    [switch]$RegisterClaudeCode,
     [switch]$SkipCodex,
     [switch]$SkipProjectMcpJson,
     [switch]$SkipConnectionTest
@@ -404,7 +404,11 @@ if (-not $SkipClaudeDesktop) {
     Write-Host "Claude Desktop config: $claudeDesktopConfig"
 }
 
-if (-not $SkipClaudeCode) {
+if ($RegisterClaudeCode) {
+    # Claude Code auto-discovers this server from the plugin's bundled .mcp.json
+    # (it reads ${CLAUDE_PLUGIN_ROOT} and the self-healing launcher needs no setup),
+    # so explicit registration is opt-in. Use -RegisterClaudeCode only for direct,
+    # non-marketplace clones where there is no plugin to auto-discover.
     Write-Step "Registering Claude Code MCP server"
     [void](Register-ClaudeCode $ServerName $serverConfig)
 }
