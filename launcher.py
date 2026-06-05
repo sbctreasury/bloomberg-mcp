@@ -1,24 +1,34 @@
 """Bloomberg MCP launcher.
 
 Works with any Python 3.11+ environment that can reach a running Bloomberg
-Terminal. The launcher checks for required packages and installs them
-automatically if missing. xbbg provides all data tools (BDP/BDH/BDIB/BDS/
-BSRCH) and runs BQL in-process via blpapi — no separate BQNT environment.
+Terminal. On startup the launcher verifies its dependencies are importable and,
+if any are missing, sets up the project environment automatically — there is no
+manual `/bloomberg-setup` step required. It prefers `uv sync` (which honors the
+lockfile and the Bloomberg package index for blpapi) and falls back to pip,
+bootstrapping pip via ensurepip when the active venv lacks it.
+
+xbbg provides all data tools (BDP/BDH/BDIB/BDS/BSRCH) and runs BQL in-process
+via blpapi — no separate BQNT environment.
 """
 
 from __future__ import annotations
 
 import importlib
+import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
 
+# (import_name, pip_installable). blpapi ships from Bloomberg's package index,
+# not PyPI, so it can only be installed via `uv sync` against pyproject.toml.
 REQUIRED = [
-    ("fastmcp", "fastmcp"),
-    ("pydantic", "pydantic"),
-    ("psutil", "psutil"),
-    ("pandas", "pandas"),
-    ("xbbg", "xbbg"),
+    ("fastmcp", True),
+    ("pydantic", True),
+    ("psutil", True),
+    ("pandas", True),
+    ("xbbg", True),
+    ("blpapi", False),
 ]
 
 
@@ -30,21 +40,83 @@ def _is_installed(import_name: str) -> bool:
         return False
 
 
-def bootstrap() -> None:
-    """Install missing required packages into the current Python environment."""
-    missing = [pkg for pkg, imp in REQUIRED if not _is_installed(imp)]
-    if not missing:
-        return
+def _project_root() -> Path:
+    return Path(os.environ.get("BLOOMBERG_MCP_HOME") or Path(__file__).parent)
 
-    # Suppress pip output to avoid corrupting MCP stdio transport.
-    print(f"Installing missing packages: {', '.join(missing)}", file=sys.stderr)
+
+def _uv_sync(project_root: Path) -> bool:
+    """Sync the project venv with uv. Returns True on success.
+
+    This is the preferred installer: uv created the venv (so it has no pip),
+    and uv sync resolves blpapi from the Bloomberg index declared in
+    pyproject.toml. stderr is captured so it cannot corrupt the MCP stdio
+    transport.
+    """
+    uv = shutil.which("uv") or os.environ.get("UV_PATH")
+    if not uv:
+        return False
+    try:
+        print("Bloomberg MCP: environment not set up — syncing with uv...", file=sys.stderr)
+        subprocess.check_call(
+            [uv, "sync", "--project", str(project_root)],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
+        )
+        return True
+    except (subprocess.CalledProcessError, OSError) as exc:
+        print(f"Bloomberg MCP: uv sync failed ({exc}); falling back to pip.", file=sys.stderr)
+        return False
+
+
+def _pip_install(packages: list[str]) -> None:
+    """Install packages with pip, bootstrapping pip via ensurepip if missing."""
+    if not _is_installed("pip"):
+        try:
+            subprocess.check_call(
+                [sys.executable, "-m", "ensurepip", "--upgrade"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.PIPE,
+            )
+            importlib.invalidate_caches()
+        except (subprocess.CalledProcessError, OSError):
+            pass
     subprocess.check_call(
-        [sys.executable, "-m", "pip", "install", "--quiet", *missing],
+        [sys.executable, "-m", "pip", "install", "--quiet", *packages],
         stdout=subprocess.DEVNULL,
         stderr=subprocess.PIPE,
     )
-    print("Done.", file=sys.stderr)
-    importlib.invalidate_caches()
+
+
+def bootstrap() -> None:
+    """Ensure required packages are importable, installing them if missing."""
+    missing = [(imp, pip_ok) for imp, pip_ok in REQUIRED if not _is_installed(imp)]
+    if not missing:
+        return
+
+    names = [imp for imp, _ in missing]
+    print(f"Bloomberg MCP: missing packages: {', '.join(names)}", file=sys.stderr)
+
+    # Preferred path: uv sync installs everything from pyproject.toml — including
+    # blpapi from the Bloomberg index — into the project's .venv.
+    if _uv_sync(_project_root()):
+        importlib.invalidate_caches()
+    else:
+        # Fallback for non-uv environments: pip-install what PyPI can provide.
+        pip_pkgs = [imp for imp, pip_ok in missing if pip_ok]
+        if pip_pkgs:
+            _pip_install(pip_pkgs)
+            importlib.invalidate_caches()
+
+    still_missing = [imp for imp, _ in REQUIRED if not _is_installed(imp)]
+    if still_missing:
+        print(
+            "ERROR: Bloomberg MCP could not install: "
+            f"{', '.join(still_missing)}. Run `uv sync` in the plugin directory "
+            "(blpapi requires the Bloomberg package index).",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    print("Bloomberg MCP: environment ready.", file=sys.stderr)
 
 
 def main() -> None:
