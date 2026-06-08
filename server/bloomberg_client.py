@@ -29,6 +29,61 @@ from utils import serialize_dataframe
 logger = logging.getLogger("bloomberg_mcp")
 
 
+def _coerce_numeric(df, skip=()):
+    """Best-effort: turn numeric-looking string columns back into numbers.
+
+    xbbg 1.x long frames carry values as strings; after pivoting to wide we
+    coerce each column to numeric only when doing so doesn't destroy data
+    (e.g. SECURITY_NAME stays a string, PX_LAST becomes a float).
+    """
+    import pandas as pd
+
+    for col in list(df.columns):
+        if col in skip:
+            continue
+        s = df[col]
+        if s.dtype != object:
+            continue
+        coerced = pd.to_numeric(s, errors="coerce")
+        if s.notna().any() and coerced.notna().sum() >= s.notna().sum():
+            df[col] = coerced
+    return df
+
+
+def _bdp_to_wide(df):
+    """Pivot an xbbg 1.x bdp long frame {ticker, field, value} to wide.
+
+    Each field becomes a column, one row per ticker. Frames that aren't in the
+    long shape (older xbbg, or already wide) are returned unchanged.
+    """
+    if df is None or not hasattr(df, "columns"):
+        return df
+    cols = {str(c) for c in df.columns}
+    if not {"ticker", "field", "value"}.issubset(cols):
+        return df
+    wide = df.pivot_table(index="ticker", columns="field", values="value", aggfunc="first")
+    wide.columns.name = None
+    wide = wide.reset_index()
+    return _coerce_numeric(wide, skip=("ticker",))
+
+
+def _bdh_to_wide(df):
+    """Pivot an xbbg 1.x bdh long frame {ticker, date, field, value} to wide.
+
+    Result has a date index and (ticker, field) MultiIndex columns, matching
+    the historical wide shape serialize_dataframe already knows how to flatten.
+    """
+    if df is None or not hasattr(df, "columns"):
+        return df
+    cols = {str(c) for c in df.columns}
+    if not {"ticker", "date", "field", "value"}.issubset(cols):
+        return df
+    wide = df.pivot_table(
+        index="date", columns=["ticker", "field"], values="value", aggfunc="first"
+    )
+    return _coerce_numeric(wide)
+
+
 class BloombergUnavailable(RuntimeError):
     """Raised when Bloomberg is unavailable or the circuit breaker is open."""
 
@@ -39,8 +94,11 @@ class BloombergClient:
     FAILURE_THRESHOLD = 3
     COOLDOWN_SEC = 30.0
 
-    # xbbg 1.x changes its defaults. Keep the MCP JSON shape stable.
-    XBBG_KWARGS = {"backend": "pandas", "format": "wide"}
+    # xbbg 1.x removed format="wide" (valid formats are long/semi_long/...),
+    # and defaults to a long {ticker, field, value} frame. We request the
+    # pandas backend and reshape long->wide ourselves (see _bdp_to_wide /
+    # _bdh_to_wide) to keep the MCP JSON shape stable across xbbg versions.
+    XBBG_KWARGS = {"backend": "pandas"}
 
     def __init__(self) -> None:
         self._blp = None
@@ -203,7 +261,7 @@ class BloombergClient:
                 flds=fields,
                 **self._xbbg_kwargs(**kwargs),
             )
-            return serialize_dataframe(df)
+            return serialize_dataframe(_bdp_to_wide(df))
 
         return self._call(_do)
 
@@ -234,7 +292,7 @@ class BloombergClient:
                 end_date=_end,
                 **self._xbbg_kwargs(**kwargs),
             )
-            return serialize_dataframe(df)
+            return serialize_dataframe(_bdh_to_wide(df))
 
         return self._call(_do)
 
@@ -304,7 +362,7 @@ class BloombergClient:
                 flds=base_fields,
                 **self._xbbg_kwargs(),
             )
-            return serialize_dataframe(df)
+            return serialize_dataframe(_bdp_to_wide(df))
 
         return self._call(_do)
 

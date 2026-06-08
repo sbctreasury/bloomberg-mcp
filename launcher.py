@@ -20,15 +20,19 @@ import subprocess
 import sys
 from pathlib import Path
 
-# (import_name, pip_installable). blpapi ships from Bloomberg's package index,
-# not PyPI, so it can only be installed via `uv sync` against pyproject.toml.
+# (import_name, pip_spec). pip_spec carries the SAME version constraints as
+# pyproject.toml so the pip fallback can never resolve an incompatible version
+# (e.g. xbbg 1.x dropped format="wide"; an unconstrained `pip install xbbg`
+# would grab a breaking major). blpapi has no pip_spec — it ships from
+# Bloomberg's package index, not PyPI, so it can only be installed via
+# `uv sync` against pyproject.toml.
 REQUIRED = [
-    ("fastmcp", True),
-    ("pydantic", True),
-    ("psutil", True),
-    ("pandas", True),
-    ("xbbg", True),
-    ("blpapi", False),
+    ("fastmcp", "fastmcp>=2.0.0"),
+    ("pydantic", "pydantic>=2.0.0"),
+    ("psutil", "psutil>=5.9.0"),
+    ("pandas", "pandas>=2.0,<3"),
+    ("xbbg", "xbbg[pandas]>=1.2.6,<2"),
+    ("blpapi", None),
 ]
 
 
@@ -89,7 +93,7 @@ def _pip_install(packages: list[str]) -> None:
 
 def bootstrap() -> None:
     """Ensure required packages are importable, installing them if missing."""
-    missing = [(imp, pip_ok) for imp, pip_ok in REQUIRED if not _is_installed(imp)]
+    missing = [(imp, spec) for imp, spec in REQUIRED if not _is_installed(imp)]
     if not missing:
         return
 
@@ -101,8 +105,9 @@ def bootstrap() -> None:
     if _uv_sync(_project_root()):
         importlib.invalidate_caches()
     else:
-        # Fallback for non-uv environments: pip-install what PyPI can provide.
-        pip_pkgs = [imp for imp, pip_ok in missing if pip_ok]
+        # Fallback for non-uv environments: pip-install what PyPI can provide,
+        # using the pinned specs so the wrong major can't slip in.
+        pip_pkgs = [spec for _imp, spec in missing if spec]
         if pip_pkgs:
             _pip_install(pip_pkgs)
             importlib.invalidate_caches()

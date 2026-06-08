@@ -72,24 +72,34 @@ def check_bloomberg_status(deep_check: bool = False, probe_timeout: float = 10.0
     return status
 
 
+def _first_bdp_value(df: Any) -> str | None:
+    """Extract the first scalar value from an xbbg bdp result.
+
+    Handles both the xbbg 1.x long frame {ticker, field, value} and older
+    wide frames, returning None when there is nothing usable.
+    """
+    if df is None or not hasattr(df, "empty") or df.empty:
+        return None
+    cols = {str(c) for c in df.columns}
+    if "value" in cols:  # xbbg 1.x long format
+        return str(df["value"].iloc[0])
+    return str(df.iloc[0, 0])  # legacy wide format
+
+
 def cusip_to_ticker(cusip: str) -> str:
     """Convert a CUSIP identifier to a Bloomberg ticker via BDP."""
     from xbbg import blp
 
-    df = blp.bdp(f"/cusip/{cusip}", "PARSEKYABLE_DES", backend="pandas", format="wide")
-    if df is not None and not df.empty:
-        return str(df.iloc[0, 0])
-    return f"/cusip/{cusip}"
+    value = _first_bdp_value(blp.bdp(f"/cusip/{cusip}", "PARSEKYABLE_DES", backend="pandas"))
+    return value if value is not None else f"/cusip/{cusip}"
 
 
 def isin_to_ticker(isin: str) -> str:
     """Convert an ISIN identifier to a Bloomberg ticker via BDP."""
     from xbbg import blp
 
-    df = blp.bdp(f"/isin/{isin}", "PARSEKYABLE_DES", backend="pandas", format="wide")
-    if df is not None and not df.empty:
-        return str(df.iloc[0, 0])
-    return f"/isin/{isin}"
+    value = _first_bdp_value(blp.bdp(f"/isin/{isin}", "PARSEKYABLE_DES", backend="pandas"))
+    return value if value is not None else f"/isin/{isin}"
 
 
 class _JSONEncoder(json.JSONEncoder):
@@ -113,7 +123,19 @@ class _JSONEncoder(json.JSONEncoder):
 
 
 def serialize_dataframe(df: Any) -> dict[str, Any]:
-    """Serialize a pandas or polars DataFrame to a JSON-ready dict."""
+    """Serialize a pandas or polars DataFrame to a JSON-ready dict.
+
+    xbbg 1.x returns its own result wrapper (DataFrameResult / narwhals frame)
+    from bql/beqs/bfld/fieldSearch. Unwrap any such object to pandas first;
+    native pandas/polars frames are left untouched.
+    """
+    mod = type(df).__module__ or ""
+    if hasattr(df, "to_pandas") and not mod.startswith(("pandas", "polars")):
+        try:
+            df = df.to_pandas()
+        except Exception:
+            pass
+
     try:
         import polars as pl
 
@@ -163,9 +185,7 @@ def search_fields(query: str, max_results: int = 20) -> list[dict[str, str]]:
     if hasattr(blp, "bfld"):
         df = blp.bfld(search_spec=query, backend="pandas")
     else:
-        df = blp.fieldSearch(query, backend="pandas", format="wide")
-    if df is None or df.empty:
-        return []
-
-    df = df.head(max_results)
-    return serialize_dataframe(df)["data"]
+        df = blp.fieldSearch(query, backend="pandas")
+    # df may be an xbbg 1.x DataFrameResult; serialize_dataframe unwraps it.
+    rows = serialize_dataframe(df).get("data", [])
+    return rows[:max_results]
