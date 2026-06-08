@@ -1,6 +1,6 @@
 {
   "name": "bloomberg-mcp",
-  "version": "1.0.4",
+  "version": "1.0.5",
   "description": "Bloomberg Terminal MCP server with auto-setup and BQL query skills. Provides 12 Bloomberg tools, BQL reference resources, status/reset helpers, and guided query generation.",
   "author": {
     "name": "SBC Treasury",

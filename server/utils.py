@@ -12,8 +12,6 @@ from __future__ import annotations
 
 import json
 import logging
-import subprocess
-import sys
 from datetime import date, datetime
 from typing import Any
 
@@ -48,89 +46,29 @@ def check_processes() -> dict[str, Any]:
     return status
 
 
-_BDP_PROBE_SCRIPT = r"""
-import json
-import sys
-
-try:
-    from xbbg import blp
-
-    df = blp.bdp("IBM US Equity", "PX_LAST", backend="pandas", format="wide")
-    ok = df is not None and not df.empty
-    print(json.dumps({"ok": bool(ok), "error": None if ok else "BDP returned empty"}))
-    sys.exit(0 if ok else 2)
-except Exception as exc:
-    print(json.dumps({"ok": False, "error": f"BDP probe failed: {exc}"}))
-    sys.exit(1)
-"""
-
-
-def _probe_bdp(timeout: float) -> dict[str, Any]:
-    """Run a Bloomberg API probe in a child process with a hard timeout.
-
-    Returns {"ok": True} on success, or {"ok": False, "error": str} on
-    timeout or any underlying exception. Never raises.
-    """
-    timeout = max(0.5, float(timeout))
-    python_path = sys.executable
-    script = _BDP_PROBE_SCRIPT
-    backend = "BDP"
-
-    try:
-        result = subprocess.run(
-            [python_path, "-c", script],
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-            encoding="utf-8",
-            errors="replace",
-        )
-    except subprocess.TimeoutExpired:
-        return {"ok": False, "error": f"{backend} probe exceeded {timeout:g}s timeout"}
-    except Exception as exc:
-        return {"ok": False, "error": f"{backend} probe failed to start: {exc}"}
-
-    stdout = result.stdout.strip()
-    if stdout:
-        try:
-            parsed = json.loads(stdout.splitlines()[-1])
-            if isinstance(parsed, dict):
-                return {
-                    "ok": bool(parsed.get("ok")),
-                    "error": parsed.get("error") or None,
-                }
-        except json.JSONDecodeError:
-            pass
-
-    stderr = result.stderr.strip()
-    detail = stderr or stdout or f"probe exited with code {result.returncode}"
-    return {"ok": False, "error": detail}
-
-
 def check_bloomberg_status(deep_check: bool = False, probe_timeout: float = 10.0) -> dict[str, Any]:
-    """Check Bloomberg Terminal status.
+    """Check Bloomberg Terminal status (process-only).
 
-    By default (``deep_check=False``) returns process-only state and never
-    issues a live API call. With ``deep_check=True`` runs a bounded API probe
-    against IBM PX_LAST to confirm session health. The probe runs in a child
-    process so a hung Bloomberg session can be killed at ``probe_timeout``.
+    API reachability is no longer probed here. The previous implementation
+    spawned a *fresh child Python process* that imported xbbg and opened a cold
+    ``blpapi`` session on every call — that cold handshake routinely exceeded
+    20-30s even when the live, already-warm session served data instantly.
+
+    ``api_connected`` is now derived by the caller from the in-process xbbg
+    warmup (see ``bloomberg_status`` in server.py), which exercises the exact
+    session real queries use. ``deep_check`` and ``probe_timeout`` are retained
+    for backward compatibility but no longer spawn a separate probe.
     """
     status = check_processes()
-    status["api_connected"] = False
 
     if not status["terminal_running"]:
+        status["api_connected"] = False
         status["error"] = status.get("error") or "No Bloomberg Terminal processes detected"
         return status
 
-    if not deep_check:
-        # Process is up; mark api as unknown rather than asserting it is up.
-        status["api_connected"] = None
-        return status
-
-    probe = _probe_bdp(probe_timeout)
-    status["api_connected"] = probe["ok"]
-    if not probe["ok"]:
-        status["error"] = probe.get("error")
+    # Process is up. Reachability is confirmed in-process by the xbbg warmup,
+    # so it is unknown at this layer.
+    status["api_connected"] = None
     return status
 
 

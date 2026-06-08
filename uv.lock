@@ -88,7 +88,7 @@ wheels = [
 
 [[package]]
 name = "bloomberg-mcp"
-version = "1.0.0"
+version = "1.0.5"
 source = { virtual = "." }
 dependencies = [
     { name = "blpapi" },

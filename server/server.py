@@ -405,7 +405,10 @@ async def bloomberg_status(
             status["backend"] = client.backend_state()
             status["breaker"] = client.breaker_state()
 
-            if warm_xbbg and status.get("terminal_running"):
+            # api_connected is derived from the in-process xbbg warmup — the
+            # same session real queries use — instead of a cold child-process
+            # blpapi probe. Run it whenever any check is requested.
+            if (warm_xbbg or deep_check) and status.get("terminal_running"):
                 warmup = await _run_bounded(
                     client.warmup,
                     timeout=probe_timeout,
@@ -415,9 +418,12 @@ async def bloomberg_status(
                 if isinstance(warmup, dict) and "error" in warmup and "type" in warmup:
                     status["data_backend_ready"] = False
                     status["data_backend_error"] = warmup
+                    status["api_connected"] = False
+                    status["error"] = status.get("error") or "xbbg warmup probe failed"
                 else:
                     status["data_backend_ready"] = True
                     status["data_backend_probe"] = warmup
+                    status["api_connected"] = True
                 status["breaker"] = client.breaker_state()
         except Exception:
             pass
